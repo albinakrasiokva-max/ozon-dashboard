@@ -69,7 +69,7 @@ const API = {
     { id: 69, name: 'SaleCommission', description: 'Вознаграждение за продажу' }, { id: 76, name: 'PremiumSubscription', description: 'Подписка Premium' }] }),
   'api-seller.ozon.ru/v1/finance/accrual/by-day': (u, opt) => JSON.parse(opt.body).date !== D(0) ? { accruals: [], last_id: '' } : { last_id: '', accruals: [
     { accrual_id: 1, date: D(0), total_amount: { amount: '2000', currency: 'RUB' }, accrued_category: 'POSTING', item_fees: null, non_item_fee: null,
-      posting: { posting_number: '1-1', products: [{ sku: 555, quantity: 2, delivery: { services: [{ type_id: 32, accrued: { amount: '-300', currency: 'RUB' } }] }, commission: { accrued: { amount: '-700', currency: 'RUB' } } }] } },
+      posting: { posting_number: '1-1', products: [{ sku: 555, quantity: 2, delivery: { services: [{ type_id: 32, accrued: { amount: '-300', currency: 'RUB' } }] }, commission: { seller_price: { amount: '3000', currency: 'RUB' }, sale_price: { amount: '2400' }, sale_commission: { amount: '-700' }, commission: { amount: '-700' }, commission_ratio: 'value:"0.230000"', sale_amount: { amount: '3000' }, coinvestment: { amount: '0' }, bonus: { amount: '600' } } }] } },
     { accrual_id: 2, date: D(0), total_amount: { amount: '-300', currency: 'RUB' }, accrued_category: 'ITEM', posting: null, non_item_fee: null,
       item_fees: { fees: [{ sku: 555, quantity: 2, fees: [{ type_id: 1, accrued: { amount: '-100', currency: 'RUB' } }, { type_id: 69, accrued: { amount: '-200' } }] }] } },
     { accrual_id: 3, date: D(0), total_amount: { amount: '-990', currency: 'RUB' }, accrued_category: 'NON_ITEM', posting: null, item_fees: null,
