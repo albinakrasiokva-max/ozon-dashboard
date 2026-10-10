@@ -189,6 +189,21 @@ test('итоги по финансам отключены (404) — считаю
   await syncAll();
 });
 
+test('старые финансовые методы отключены — начисления берутся из /v1/finance/accrual/by-day', async () => {
+  installMock({ 'api-seller.ozon.ru/v3/finance/transaction/list': 404, 'api-seller.ozon.ru/v3/finance/transaction/totals': 404 });
+  await syncAll();
+  assert.equal(sourceStatus().find(s => s.key === 'ozon').error, null, 'синхронизация не падает');
+  const raw = getDb().raw.ozon;
+  const cur = raw.reports.filter(d => d.type === 'accruals')[2];
+  const it = cur.data.items[555];
+  assert.deepEqual(it.sold, { soldQty: 2, retQty: 0, soldAmt: 3000, soldLoyal: 0, retAmt: 0, retLoyal: 0 }, 'выручка = итог + услуги + комиссия');
+  assert.equal(it.fees.commission, 900); assert.equal(it.fees.logistics, 300); assert.equal(it.fees.acquiring, 100);
+  assert.equal(cur.data.adsSub, 990, 'подписка без товара');
+  assert.equal(raw.finance[1].payout, 710, 'к выплате = сумма начислений месяца');
+  installMock();
+  await syncAll();
+});
+
 test('ошибка в начислениях не ломает основную синхронизацию Ozon', async () => {
   installMock({ 'api-seller.ozon.ru/v3/finance/transaction/list': 403 });
   await syncAll();
