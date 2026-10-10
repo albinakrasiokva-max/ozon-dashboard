@@ -306,3 +306,13 @@ test('Ozon: доходы как в документах — выкупы мар�
   assert.equal(ds.data.income.compensation, 422, 'компенсация — доход, а не удержание');
   assert.equal(ds.data.unassigned.other, 0);
 });
+
+test('Ozon: повторное применение выкупов к месяцу не задваивает их', async () => {
+  const { accrualsDataset, applyBuyouts } = await import('../lib/ozonReports.js');
+  const ops = [{ operation_type_name: 'Доставка покупателю', amount: 700, accruals_for_sale: 1000, sale_commission: -300, items: [{ sku: 555 }], services: [] }];
+  const ds = accrualsDataset(ops, { from: '2026-08-01', to: '2026-08-31' }, {}, [{ sku: 555, qty: 1, amount: 400 }]);
+  applyBuyouts(ds, [{ sku: 555, qty: 2, amount: 900 }, { sku: 0, qty: 1, amount: 50 }]);
+  assert.equal(ds.data.items[555].sold.soldAmt, 1900, '1000 продажа + 900 новые выкупы, старые 400 сняты');
+  assert.equal(ds.data.items[555].sold.soldQty, 3);
+  assert.equal(ds.data.income.buyout, 50);
+});
