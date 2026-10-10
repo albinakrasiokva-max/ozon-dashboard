@@ -1491,8 +1491,9 @@ function purchasePlan(M) {
     const a = s.stock.advice, c = s.cost.v;
     return { s, need: a.need, lot: a.lot, must: a.level === 'neg', cost: c, total: c != null ? c * a.lot : null, lasts: s.stock.vel > 0 ? Math.floor((s.stock.available + s.stock.inbound + a.lot) / s.stock.vel) : null };
   });
-  const must = rows.filter(r => r.must), opt = rows.filter(r => !r.must);
-  return { rows, must, opt, total: sum(must, r => r.total || 0), qty: sum(must, r => r.lot), optTotal: sum(opt, r => r.total || 0), noCost: must.filter(r => r.cost == null) };
+  // Товары с малым остатком, которым поставка не нужна: её уже покрывают товары в пути
+  const covered = (M.stock || []).filter(s => s.stock.advice.level === 'acc');
+  return { must: rows, covered, total: sum(rows, r => r.total || 0), qty: sum(rows, r => r.lot), noCost: rows.filter(r => r.cost == null) };
 }
 function renderFinance() {
   const M = S.model, el = $('#tab-finance'), set = S.settings;
@@ -1581,6 +1582,7 @@ function renderFinance() {
       <label>Закупку считать на, дн.<input type="number" min="7" id="finSupply" value="${set.supplyDays}"></label></div>`;
   const pcols = [
     { key: 'name', label: 'Товар', sticky: 1, val: r => r.s.name, cell: r => nameCell(r.s) },
+    { key: 'abc', label: 'ABC', title: 'Группа C — небольшой вклад в прибыль (или выручку): пополняйте, если товар нужен в ассортименте', val: r => r.s.abcProfit || r.s.abcRevenue || null, fmt: v => v === 'C' ? '<span class="pill warn" title="Небольшой вклад в прибыль — пополняйте, если товар нужен в ассортименте">C</span>' : v || '—' },
     { key: 'avail', label: 'Остаток + в пути', num: 1, val: r => r.s.stock.available + r.s.stock.inbound, fmt: v => num(v) },
     { key: 'vel', label: 'Продаж в день', num: 1, val: r => r.s.stock.vel, fmt: v => num(v, 2) },
     { key: 'days', label: 'Хватит, дн.', num: 1, val: r => r.s.stock.days, fmt: v => ok(v) ? num(v) : '—' },
@@ -1591,11 +1593,11 @@ function renderFinance() {
     { key: 'lasts', label: 'Запаса хватит, дн.', num: 1, title: 'На сколько дней хватит остатка вместе с поставкой при текущей скорости продаж', val: r => r.lasts, fmt: v => ok(v) ? num(v) : '—' }];
   const buy = `<div class="panel"><div class="panel-head"><h2>Закупка товара</h2><p>Товары, которым пора поставка (остатка меньше чем на ${set.stockWarn} дн.). Количество = продажи в день × ${set.supplyDays} дн. − остаток − в пути, округлённое вверх до кратного ${num(set.minLot)} шт (не меньше одной партии). Сумма — по себестоимости.</p></div>
     ${form}<div style="margin-top:14px">
-    ${!M.have.stock ? stub('Нет данных об остатках — закупку посчитать не из чего.') : !P.must.length ? stub('Сейчас поставка не нужна ни одному товару из групп A и B.') : `
+    ${!M.have.stock ? stub('Нет данных об остатках — закупку посчитать не из чего.') : !P.must.length ? stub('Сейчас поставка не нужна ни одному товару.') : `
       <div class="bigpair" style="margin-bottom:14px"><div><div class="small muted">Закупка: ${nTov(P.must.length)}, ${num(P.qty)} шт</div><div class="v">${rub(P.total)}</div></div>
         <div><div class="small muted">${P.noCost.length ? 'Без себестоимости — не в сумме' : 'Себестоимость'}</div><div class="v ${P.noCost.length ? 'warn' : 'pos'}">${P.noCost.length ? nTov(P.noCost.length) : 'известна у всех'}</div></div></div>
       ${table('finBuy', pcols, P.must, { sort: { key: 'total', dir: -1 } })}`}
-    ${P.opt.length ? `<details style="margin-top:14px"><summary class="small muted">Ещё ${nTov(P.opt.length)} группы C с малым остатком — по желанию, в сумму не входят${P.optTotal ? ` (${rub(P.optTotal)})` : ''}</summary><div style="margin-top:10px">${table('finBuyOpt', pcols, P.opt, { sort: { key: 'total', dir: -1 } })}</div></details>` : ''}
+    ${P.covered.length ? `<p class="small muted" style="margin-top:10px">Остатка мало, но закупка не нужна — товары в пути покрывают ${set.supplyDays} дн. продаж: ${P.covered.map(s => esc(short(s.name, 40)) + ` (${num(s.stock.inbound)} шт в пути)`).join(', ')}.</p>` : ''}
     </div></div>`;
 
   // --- 5. Бюджет ---
