@@ -138,8 +138,9 @@ test('продажи: заказы, средний чек, возвраты', ()
 test('Аналитика Ozon: начисления, остатки и реклама в формате страницы ozon.html', () => {
   const { reports } = getDb().raw.ozon, ads = getDb().raw.ozonPerf.reports;
   const acc = reports.filter(d => d.type === 'accruals');
-  assert.equal(acc.length, 3, 'начисления за 3 месяца');
-  const cur = acc[2];
+  const nMonths = new Date().getMonth() + 1;   // с января текущего года
+  assert.equal(acc.length, nMonths, 'начисления помесячно с января');
+  const cur = acc.at(-1);
   assert.equal(cur.period.from, D(0).slice(0, 8) + '01');
   assert.equal(cur.period.to, D(0));
   const it = cur.data.items[555];
@@ -157,10 +158,10 @@ test('Аналитика Ozon: начисления, остатки и рекл�
   assert.equal(st.daysLeft, 15);
 
   const fromAcc = reports.filter(d => d.data.spendOnly);
-  assert.equal(fromAcc.length, 3, 'реклама из начислений — на случай, если нет ключей Performance');
-  assert.deepEqual(fromAcc[2].data.campaigns.map(c => [c.sku, c.tool, c.spend]), [[0, 'Услуга продвижения Оплата за клик', 500]], 'подписка Premium не входит — она учитывается отдельно');
+  assert.equal(fromAcc.length, nMonths, 'реклама из начислений — на случай, если нет ключей Performance');
+  assert.deepEqual(fromAcc.at(-1).data.campaigns.map(c => [c.sku, c.tool, c.spend]), [[0, 'Услуга продвижения Оплата за клик', 500]], 'подписка Premium не входит — она учитывается отдельно');
 
-  assert.equal(ads.length, 3);
+  assert.equal(ads.length, nMonths);
   const c = ads[2].data.campaigns[0];
   assert.equal(c.sku, 555, 'кампания с одним товаром привязана к SKU');
   assert.equal(c.spend, 15000); assert.equal(c.impr, 60000); assert.equal(c.tool, 'Оплата за клик');
@@ -194,7 +195,7 @@ test('старые финансовые методы отключены — на
   await syncAll();
   assert.equal(sourceStatus().find(s => s.key === 'ozon').error, null, 'синхронизация не падает');
   const raw = getDb().raw.ozon;
-  const cur = raw.reports.filter(d => d.type === 'accruals')[2];
+  const cur = raw.reports.filter(d => d.type === 'accruals').at(-1);
   const it = cur.data.items[555];
   assert.deepEqual(it.sold, { soldQty: 2, retQty: 0, soldAmt: 2400, soldLoyal: 600, retAmt: 0, retLoyal: 0 }, 'выручка по цене продавца: 2400 + 600 баллов');
   assert.equal(it.fees.commission, 900); assert.equal(it.fees.logistics, 300); assert.equal(it.fees.acquiring, 100);
@@ -209,7 +210,7 @@ test('ошибка в начислениях не ломает основную 
   await syncAll();
   const oz = sourceStatus().find(s => s.key === 'ozon');
   assert.equal(oz.error, null);
-  assert.equal(getDb().raw.ozon.reports, null);
+  assert.ok(getDb().raw.ozon.reports.some(d => d.type === 'accruals'), 'закрытые месяцы остаются из прошлой синхронизации');
   assert.match(getDb().raw.ozon.reportsError, /нет доступа \(403\)/);
   installMock();
   await syncAll();
