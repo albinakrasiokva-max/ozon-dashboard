@@ -192,7 +192,7 @@ h2.pt{font-size:20px;margin-bottom:4px}
   </main>
 </div>
 <aside class="drawer" id="drawer" aria-label="ИИ-ассистент">
-  <div class="dh">✨ ИИ-ассистент <span class="demo">демо</span><button data-act="aiclose" aria-label="Закрыть">×</button></div>
+  <div class="dh">✨ ИИ-ассистент <span id="aimode" class="tag t-gry">правила</span><button data-act="aiclose" aria-label="Закрыть">×</button></div>
   <div class="msgs" id="msgs"></div>
   <div class="chips" id="chips"></div>
   <form class="dfoot" id="aiform"><input id="aiq" placeholder="Спросите про выручку, склад, задачи…" autocomplete="off"><button class="btn pri" type="submit">→</button></form>
@@ -210,15 +210,15 @@ const DATA = {
   team: ['Алексей', 'Мария (менеджер)', 'Игорь (склад)', 'Елена (бухгалтер)', 'Дмитрий (маркетолог)'],
   settings: { maxDrr: 15, minDaysStock: 14, monthPlan: 4000000, avgDaily: 121000, profitRate: 0.172, margin: 17.2 },
   sources: [
-    { id: 'wb', keys: ['wb', 'wbAds'], short: 'WB',   name: 'Wildberries',      status: 'demo', desc: 'Продажи, заказы, остатки, возвраты, реклама WB', how: 'ЛК продавца → Профиль → Настройки → Доступ к API (Статистика, Аналитика, Документы, Продвижение — только чтение)' },
+    { id: 'wb', keys: ['wb', 'wbAds', 'wbDocs'], short: 'WB',   name: 'Wildberries',      status: 'demo', desc: 'Продажи, заказы, остатки, возвраты, реклама и документы WB', how: 'ЛК продавца → Профиль → Настройки → Доступ к API (Статистика, Аналитика, Документы, Продвижение — только чтение)' },
     { id: 'ozon', keys: ['ozon'], short: 'Ozon', name: 'Ozon Seller',      status: 'demo', desc: 'Выручка, комиссии, логистика, остатки', how: 'Ozon Seller → Настройки → API ключи, роль Admin read only (Client-Id и API-ключ)' },
     { id: 'perf', keys: ['ozonPerf'], short: 'Perf', name: 'Ozon Performance', status: 'demo', desc: 'Реклама Ozon: расход, заказы, ДРР', how: 'performance.ozon.ru → Настройки → API (client_id и client_secret)' },
     { id: 'bank', keys: ['tbank', 'tochka'], short: 'Банк', name: 'Банк (Т-Банк / Точка)', status: 'demo', desc: 'Остатки на счетах, выписка', how: 'Интеграции → API → токен на чтение счетов и выписок' },
     { id: 'crm', keys: ['amocrm', 'bitrix'], short: 'CRM',  name: 'CRM (amoCRM / Битрикс24)', status: 'demo', desc: 'Воронка и сделки', how: 'amoCRM: долгосрочный токен + поддомен. Битрикс24: входящий вебхук с правами crm' },
-    { id: 'mail', short: 'Почта', name: 'Почта (IMAP)',    status: 'demo', desc: 'Документы из вложений писем', how: 'Адрес, IMAP-сервер и пароль приложения' },
-    { id: 'tg',   short: 'TG',   name: 'Telegram-бот',     status: 'demo', desc: 'Документы, которые вы пересылаете боту', how: '@BotFather → /newbot → токен' },
-    { id: 'edo',  short: 'ЭДО',  name: 'Диадок',           status: 'demo', desc: 'Входящие акты и УПД, ожидающие подписи', how: 'Ключ разработчика на developer.kontur.ru, логин и пароль' },
-    { id: 'ai',   short: 'ИИ',   name: 'Claude API',       status: 'demo', desc: 'Распознавание документов, чат, Центр решений на ИИ', how: 'console.anthropic.com → API Keys' }
+    { id: 'mail', keys: ['mail'], short: 'Почта', name: 'Почта (IMAP)',    status: 'demo', desc: 'Документы из вложений писем', how: 'Адрес, IMAP-сервер и пароль приложения' },
+    { id: 'tg', keys: ['telegram'], short: 'TG',   name: 'Telegram-бот',     status: 'demo', desc: 'Документы, которые вы пересылаете боту', how: '@BotFather → /newbot → токен' },
+    { id: 'edo', keys: ['diadoc'], short: 'ЭДО',  name: 'Диадок',           status: 'demo', desc: 'Входящие акты и УПД, ожидающие подписи', how: 'Ключ разработчика на developer.kontur.ru, логин и пароль' },
+    { id: 'ai', keys: ['ai'], short: 'ИИ',   name: 'Claude API',       status: 'demo', desc: 'Распознавание документов, чат, Центр решений на ИИ', how: 'console.anthropic.com → API Keys' }
   ],
   headSources: ['wb', 'ozon', 'bank', 'crm'],
   kpiSpark: {
@@ -346,7 +346,7 @@ const today0 = () => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; }
 const addD = n => { const t = today0(); t.setDate(t.getDate() + n); return t; };
 const iso = d => { const z = n => String(n).padStart(2, '0'); return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()); };
 const isoD = n => iso(addD(n));
-const fdate = s => { const [y, m, d] = s.split('-'); return d + '.' + m + '.' + y; };
+const fdate = s => { if (!s) return '—'; const [y, m, d] = String(s).slice(0, 10).split('-'); return d + '.' + m + '.' + y; };
 const fshort = d => d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
 const uid = () => Math.random().toString(36).slice(2, 9);
 const load = (k, def) => { try { const v = localStorage.getItem('bos_' + k); return v ? JSON.parse(v) : def; } catch (e) { return def; } };
@@ -373,7 +373,9 @@ let fDocs = { src: '' };
 let decTab = 'new';
 let lastSync = load('sync', null) || new Date().toISOString();
 let crmLive = false, syncing = false, srv = null;
+let lastEdit = 0;
 const saveAll = () => {
+  lastEdit = Date.now();
   save('tasks', tasks); save('deals', deals); save('docs', docs); save('decisions', decState);
   if (DATA.live) { pushStore('tasks', tasks); pushStore('docs', docs); pushStore('decisions', decState); if (!crmLive) pushStore('deals', deals); }
 };
@@ -442,7 +444,7 @@ function buildDecisions() {
   });
   if (ruleOk('skus')) S.filter(s => s.profit < 0 && s.rev > 0).forEach(s => out.push({ id: 'neg-' + s.art, dir: 'Цены', urg: 'high', title: `Поднять цену или убрать арт. ${s.art} из рекламы`, sit: `«${s.name}» в минус: прибыль ${rub(s.profit)} за 28 дней (маржа ${pct(s.margin)}). Себестоимость ${pct(s.cogs * 100, 0)}, комиссии и логистика ${pct(s.fees * 100, 0)}, реклама ${mln(s.ads)} (ДРР ${pct(s.drr)}).`, why: 'Продажи этого артикула уменьшают общую прибыль.', steps: ['Пересчитать цену с учётом комиссий и рекламы', 'Поднять цену на 8–10% и отключить рекламу', 'Через 2 недели оценить результат'], effect: Math.round(Math.abs(s.profit)), due: isoD(5), conf: 65, metric: `Маржа арт. ${s.art} > 0%` }));
   if (ruleOk('plan') && pi.plan && pi.fc < pi.plan * 0.97) out.push({ id: 'plan', dir: 'Продажи', urg: 'med', title: 'Догнать план месяца', sit: `Факт ${mln(pi.fact)} (${pct(pi.p, 0)} плана). Прогноз на конец месяца ${mln(pi.fc)} — не хватает ${mln(pi.plan - pi.fc)}.`, why: 'При текущем темпе план не выполнится. Быстрее всего помогает акция на ходовых артикулах и рост оптовых сделок.', steps: ['Запустить акцию на топ-3 артикула', 'Дожать сделки в стадии «Счёт выставлен» в CRM', 'Проверить остатки топ-артикулов перед акцией'], effect: Math.round(pi.plan - pi.fc), due: isoD(7), conf: 55, metric: 'Прогноз выручки на конец месяца ≥ плана' });
-  const toPay = docs.filter(d => d.type === 'Счёт' && d.status !== 'Обработан');
+  const toPay = docs.filter(d => (d.needPay || d.type === 'Счёт') && d.status !== 'Обработан');
   if (toPay.length) out.push({ id: 'pay', dir: 'Документы', urg: 'med', title: `Оплатить счета: ${toPay.length} шт. на ${mln(toPay.reduce((a, d) => a + d.sum, 0))}`, sit: toPay.map(d => `${d.cp} — ${rub(d.sum)}`).join('; ') + '.', why: 'Просрочка по счетам портит отношения с поставщиками.', steps: toPay.map(d => `Оплатить счёт ${d.cp} (${rub(d.sum)})`), effect: 0, due: isoD(1), conf: 90, metric: 'Нет неоплаченных счетов старше 3 дней' });
   const stuck = deals.filter(d => /сч[её]т/i.test(d.stage));
   if (stuck.length) out.push({ id: 'crm', dir: 'CRM', urg: 'low', title: `Дожать оплату по сделкам на этапе счёта: ${stuck.length}`, sit: stuck.map(d => `${d.client} — ${rub(d.sum)}`).join('; ') + '.', why: 'Сделка на стадии счёта — самая близкая к деньгам.', steps: ['Позвонить клиенту и уточнить сроки оплаты', 'Отправить напоминание со ссылкой на счёт'], effect: stuck.reduce((a, d) => a + d.sum, 0), due: isoD(2), conf: 60, metric: 'Сделка перешла в «Оплачено»' });
@@ -478,6 +480,7 @@ function go(p) {
   history.replaceState(null, '', '#' + page);
   $('#side').classList.remove('open'); $('#scrim').classList.remove('show');
   render(); window.scrollTo(0, 0);
+  if (page === 'integ' && DATA.live) api('/api/status').then(r => { srv = r; if (page === 'integ') render(); }).catch(() => {});
 }
 function renderHead() {
   const h = new Date().getHours(), g = h < 5 ? 'Доброй ночи' : h < 12 ? 'Доброе утро' : h < 18 ? 'Добрый день' : 'Добрый вечер';
@@ -485,6 +488,7 @@ function renderHead() {
   $('#hello2').textContent = new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
   $('#srcs').innerHTML = DATA.headSources.map(id => { const s = DATA.sources.find(x => x.id === id), st = srcState(s); return `<span class="chip" title="${esc(s.name)}: ${st[0]}"><span class="dot ${st[2]}"></span>${s.short}</span>`; }).join('');
   const t = new Date(lastSync);
+  const ai = DATA.live && srv?.ai; $('#aimode').textContent = ai ? 'Claude' : 'правила'; $('#aimode').className = 'tag ' + (ai ? 't-vio' : 't-gry');
   $('#sync').innerHTML = `Синхронизация: ${t.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} ${DATA.live ? '' : '(демо)'}${syncing ? ' · идёт…' : ''} <button data-act="sync" ${syncing ? 'disabled' : ''}>↻ Обновить</button>`;
 }
 
@@ -564,7 +568,7 @@ function taskCard(t) {
   const over = t.status !== 'done' && t.due && t.due < isoD(0), idx = TCOL.findIndex(c => c[0] === t.status);
   return `<div class="kc" draggable="true" data-id="${t.id}" data-board="tasks">
     <div class="tt" data-act="editTask" data-id="${t.id}" style="cursor:pointer">${esc(t.title)}</div>
-    <div class="row" style="gap:6px;flex-wrap:wrap"><span class="tag ${PR[t.prio][1]}">${PR[t.prio][0]}</span>${t.ai ? '<span class="tag t-vio">✨ создал ИИ</span>' : ''}${t.doc ? `<span class="tag t-blu" data-go="docs" style="cursor:pointer">📎 документ</span>` : ''}${t.decision ? '<span class="tag t-gry">🎯 решение</span>' : ''}</div>
+    <div class="row" style="gap:6px;flex-wrap:wrap"><span class="tag ${PR[t.prio][1]}">${PR[t.prio][0]}</span>${t.ai ? '<span class="tag t-vio">✨ создал ИИ</span>' : ''}${t.doc ? `<span class="tag t-blu" data-act="docInfo" data-id="${esc(t.doc)}" style="cursor:pointer">📎 документ</span>` : ''}${t.decision ? '<span class="tag t-gry">🎯 решение</span>' : ''}</div>
     <div class="mt"><span class="av" title="${esc(t.who)}">${initials(t.who)}</span><span class="${over ? 'dn' : ''}">${t.due ? '📅 ' + fdate(t.due) + (over ? ' · просрочено' : '') : 'без срока'}</span>
     <span class="mv">${idx > 0 ? `<button data-act="mv" data-id="${t.id}" data-d="-1" aria-label="Назад">←</button>` : ''}${idx < 2 ? `<button data-act="mv" data-id="${t.id}" data-d="1" aria-label="Вперёд">→</button>` : ''}</span></div></div>`;
 }
@@ -633,13 +637,34 @@ function dealModal(id) {
 /* ---- Документы ---- */
 const SRC = ['Почта', 'ЭДО', 'WB', 'Ozon', 'Банк', 'Telegram', 'Загрузка'];
 function pDocs() {
-  const list = docs.filter(d => !fDocs.src || d.source === fDocs.src).sort((a, b) => b.date.localeCompare(a.date));
-  return `<h2 class="pt">Документы</h2><p class="sub">Счета, акты и договоры из всех источников ${demoTag}. Автоматическое чтение документов ИИ подключается на следующем этапе.</p>
+  const list = docs.filter(d => !fDocs.src || d.source === fDocs.src).sort((a, b) => String(b.received || b.date).localeCompare(String(a.received || a.date)));
+  const aiOn = DATA.live && srv?.ai;
+  const sub = !DATA.live ? `Счета, акты и договоры из всех источников ${demoTag}. Чтобы документы приходили сами, запустите сервер.`
+    : aiOn ? 'Документы из почты, Telegram, ЭДО, кабинета WB и ручной загрузки. ИИ читает каждый и сам создаёт задачи «подписать» и «оплатить».'
+      : 'Документы из почты, Telegram, ЭДО, кабинета WB и ручной загрузки. Распознавание выключено — добавьте ANTHROPIC_API_KEY в .env.';
+  const aiTag = d => d.ai === 'pending' ? '<span class="tag t-blu">ИИ читает…</span>' : d.ai === 'error' ? `<span class="tag t-red" title="${esc(d.aiError)}">ошибка ИИ</span>` : d.ai === 'done' ? '<span class="tag t-vio">✨ ИИ</span>' : '';
+  const need = d => (d.needPay ? '<span class="tag t-amb">оплатить</span> ' : '') + (d.needSign ? '<span class="tag t-amb">подписать</span>' : '');
+  return `<h2 class="pt">Документы</h2><p class="sub">${sub}</p>
   <div class="filters"><select class="f-in" data-f="dsrc"><option value="">Все источники</option>${SRC.map(s => `<option ${fDocs.src === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
   <span class="mut">Найдено: ${list.length}</span><button class="btn pri" data-act="upload" style="margin-left:auto">⬆ Загрузить файл</button></div>
-  <div class="card tw"><table class="tbl"><thead><tr><th>Документ</th><th>Источник</th><th>Тип</th><th>Контрагент</th><th class="num">Сумма</th><th>Дата</th><th>Статус</th></tr></thead><tbody>
-  ${list.map(d => `<tr><td><a data-act="docInfo" data-id="${d.id}" style="cursor:pointer">${esc(d.name)}</a></td><td>${d.source}</td><td>${esc(d.type)}</td><td>${esc(d.cp)}</td><td class="num">${d.sum ? rub(d.sum) : '—'}</td><td>${fdate(d.date)}</td>
-  <td><select class="f-in" data-f="dst" data-id="${d.id}" style="padding:4px 8px">${['Новый', 'Обработан', 'Ждёт подписи'].map(s => `<option ${d.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></td></tr>`).join('') || '<tr><td colspan="7" class="empty">Документов нет</td></tr>'}</tbody></table></div>`;
+  <div class="card tw"><table class="tbl"><thead><tr><th>Документ</th><th>Источник</th><th>Тип</th><th>Контрагент</th><th class="num">Сумма</th><th>Дата</th><th>Срок</th><th>Статус</th></tr></thead><tbody>
+  ${list.map(d => `<tr><td style="min-width:220px"><a data-act="docInfo" data-id="${esc(d.id)}" style="cursor:pointer">${esc(d.name)}</a> ${aiTag(d)}${d.summary ? `<div class="mut" style="font-size:12px;margin-top:2px">${esc(d.summary)}</div>` : ''}<div style="margin-top:4px">${need(d)}</div></td>
+  <td>${esc(d.source)}</td><td>${esc(d.type)}${d.section ? `<div class="mut" style="font-size:12px">${esc(d.section)}</div>` : ''}</td><td>${esc(d.cp) || '—'}</td><td class="num">${d.sum ? rub(d.sum) : '—'}</td><td>${fdate(d.date)}</td><td class="${d.due && d.due < isoD(0) && d.status !== 'Обработан' ? 'dn' : ''}">${fdate(d.due)}</td>
+  <td><select class="f-in" data-f="dst" data-id="${esc(d.id)}" style="padding:4px 8px">${['Новый', 'Обработан', 'Ждёт подписи'].map(s => `<option ${d.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></td></tr>`).join('') || '<tr><td colspan="8" class="empty">Документов пока нет. Перешлите счёт боту в Telegram, отправьте на почту или загрузите файл.</td></tr>'}</tbody></table></div>`;
+}
+function docModal(id) {
+  const d = docs.find(x => x.id === id);
+  if (!d) { toast('Документ не найден'); return; }
+  const linked = tasks.filter(t => t.doc === id);
+  const aiTxt = { pending: 'ИИ распознаёт…', done: 'Распознан ИИ', error: 'Ошибка распознавания: ' + (d.aiError || ''), off: 'Распознавание выключено — нет ключа Claude API', unsupported: 'Этот формат ИИ не читает — нужен PDF или фото' }[d.ai] || '';
+  const row = (k, v) => v ? `<div><div class="g">${k}</div><b style="text-align:right">${v}</b></div>` : '';
+  modal(esc(d.name), `${d.summary ? `<p style="margin-bottom:10px">${esc(d.summary)}</p>` : ''}<div class="list">
+    ${row('Источник', esc(d.source) + (d.from ? ` · ${esc(d.from)}` : ''))}${row('Тип', esc(d.type) + (d.number ? ` №${esc(d.number)}` : ''))}
+    ${row('Контрагент', esc(d.cp) + (d.inn ? ` · ИНН ${esc(d.inn)}` : ''))}${row('Сумма', d.sum ? rub(d.sum) : '')}${row('Дата', fdate(d.date))}${row('Срок', d.due ? fdate(d.due) : '')}
+    ${row('Раздел', esc(d.section))}${row('Нужно', [d.needSign && 'подписать', d.needPay && 'оплатить'].filter(Boolean).join(', '))}
+    <div><div class="g">Статус</div>${docTag(d.status)}</div>${row('ИИ', esc(aiTxt))}</div>
+    ${linked.length ? `<h4 style="margin:14px 0 4px">Задачи по документу</h4><div class="list">${linked.map(t => `<div><div class="g">${esc(t.title)}<div class="s">${esc(t.who)} · ${fdate(t.due)}</div></div><span class="tag ${t.status === 'done' ? 't-grn' : 't-blu'}">${TCOL.find(c => c[0] === t.status)?.[1] || ''}</span></div>`).join('')}</div>` : ''}
+    <div class="row" style="margin-top:14px;flex-wrap:wrap">${DATA.live && d.file ? `<a class="btn sm" href="/api/docs/${encodeURIComponent(d.id)}/file" target="_blank" rel="noopener">Открыть файл</a>` : ''}${DATA.live && srv?.ai && d.file ? `<button class="btn sm" data-act="docRecog" data-id="${esc(d.id)}">✨ Распознать заново</button>` : ''}</div>`);
 }
 
 /* ---- Интеграции ---- */
@@ -652,7 +677,7 @@ function srcState(s) {
   const det = st.filter(x => x.enabled || x.error).map(x => ({ name: x.name, ok: x.ok, error: x.error, at: x.lastOkAt }));
   if (errs.length) return [on.some(x => x.ok) ? 'Частично: есть ошибки' : 'Ошибка подключения', 't-red', 'err', det];
   if (on.length && on.every(x => x.ok)) return ['Подключено', 't-grn', 'ok', det];
-  if (on.length) return ['Ждёт первой синхронизации', 't-blu', '', det];
+  if (on.length) return [s.id === 'ai' ? 'Ключ указан — включится при первом запросе' : s.id === 'tg' ? 'Бот запускается…' : 'Ждёт первой синхронизации', 't-blu', '', det];
   return ['Не подключено · демо', 't-amb', '', det];
 }
 const fdt = s => (s ? new Date(s).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
@@ -661,7 +686,7 @@ function pInteg() {
   ${DATA.live ? '' : '<div class="card" style="margin-bottom:16px;border-color:rgba(255,176,32,.4)"><b class="warn">Страница открыта без сервера — работает демо-режим.</b><p class="mut" style="margin-top:4px">Чтобы подключить реальные данные, запустите сервер: <code>npm start</code> и откройте http://localhost:3000.</p></div>'}
   <div class="grid g3">${DATA.sources.map(s => { const [t, cls, , det] = srcState(s); return `<div class="card integ"><div class="row"><div class="logo2">${s.short.slice(0, 2)}</div><div class="g"><b>${s.name}</b><div class="mut" style="font-size:12px">${s.desc}</div></div></div>
   <div><span class="tag ${cls}">${t}</span></div>
-  ${det.map(d => `<div style="font-size:12.5px">${det.length > 1 ? `<b>${esc(d.name)}:</b> ` : ''}${d.error ? `<span class="dn">${esc(d.error)}</span>` : d.ok ? `<span class="up">данные от ${fdt(d.at)}</span>` : '<span class="mut">ещё не загружено</span>'}${d.error && d.at ? ` <span class="mut">(последние данные от ${fdt(d.at)})</span>` : ''}</div>`).join('')}
+  ${det.map(d => `<div style="font-size:12.5px">${det.length > 1 ? `<b>${esc(d.name)}:</b> ` : ''}${d.error ? `<span class="dn">${esc(d.error)}</span>` : d.ok ? `<span class="up">${['ai', 'tg'].includes(s.id) ? 'работает, последний ответ' : 'данные от'} ${fdt(d.at)}</span>` : '<span class="mut">ещё не загружено</span>'}${d.error && d.at ? ` <span class="mut">(последние данные от ${fdt(d.at)})</span>` : ''}</div>`).join('')}
   <button class="btn sm" data-act="connect" data-id="${s.id}">Как подключить</button></div>`; }).join('')}</div>
   ${DATA.notes.length ? `<div class="card" style="margin-top:16px"><h3>Как посчитаны цифры</h3><ul style="margin-left:18px;color:var(--mut)">${DATA.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul></div>` : ''}`;
 }
@@ -748,11 +773,25 @@ function aiReply(q) {
   if (/документ|подпис|акт/.test(q)) { const w = docs.filter(d => d.status === 'Ждёт подписи'); return `Документов: ${docs.length}. Ждут подписи: ${w.length}${w.length ? ' — ' + w.map(d => d.name).join('; ') : ''}.`; }
   return 'Я отвечаю по данным дашборда: выручка и план, прибыль, деньги, склад, реклама, задачи, сделки, документы. Если данных нет — так и скажу, выдумывать цифры не буду.';
 }
-function aiSay(text, me) { const m = document.createElement('div'); m.className = 'msg' + (me ? ' me' : ''); m.textContent = text; $('#msgs').appendChild(m); $('#msgs').scrollTop = 1e9; }
+function aiSay(text, me) { const m = document.createElement('div'); m.className = 'msg' + (me ? ' me' : ''); m.textContent = text; $('#msgs').appendChild(m); $('#msgs').scrollTop = 1e9; return m; }
+const chatHist = [];
+async function aiAnswer(q) {
+  if (!(DATA.live && srv?.ai)) { setTimeout(() => aiSay(aiReply(q)), 250); return; }
+  const m = aiSay('Смотрю данные…');
+  chatHist.push({ role: 'user', text: q });
+  try {
+    const r = await api('/api/chat', { method: 'POST', body: JSON.stringify({ messages: chatHist }) });
+    m.textContent = r.text; chatHist.push({ role: 'assistant', text: r.text });
+  } catch (e) {
+    chatHist.pop();
+    m.textContent = `Claude не ответил: ${e.message}\n\nПо встроенным правилам:\n${aiReply(q)}`;
+  }
+  $('#msgs').scrollTop = 1e9;
+}
 function aiOpen(q) {
   $('#drawer').classList.add('open');
   if (!$('#msgs').children.length) { aiSay('Здравствуйте! Я отвечаю по данным вашего бизнеса. Что интересует?'); $('#chips').innerHTML = aiChips.map(c => `<button data-chip="${c}">${c}</button>`).join(''); }
-  if (q) { aiSay(q, true); setTimeout(() => aiSay(aiReply(q)), 250); }
+  if (q) { aiSay(q, true); aiAnswer(q); }
 }
 
 /* ===================== события ===================== */
@@ -773,7 +812,8 @@ document.addEventListener('click', e => {
     case 'mv': { const t = tasks.find(x => x.id === id), i = TCOL.findIndex(c => c[0] === t.status) + +el.dataset.d; t.status = TCOL[i][0]; saveAll(); render(); break; }
     case 'mvDeal': { const d = deals.find(x => x.id === id); setDealStage(d, DATA.stages[DATA.stages.indexOf(d.stage) + +el.dataset.d]); break; }
     case 'upload': $('#file').click(); break;
-    case 'docInfo': { const d = docs.find(x => x.id === id); modal(esc(d.name), `<div class="list"><div><div class="g">Источник</div><b>${d.source}</b></div><div><div class="g">Тип</div><b>${esc(d.type)}</b></div><div><div class="g">Контрагент</div><b>${esc(d.cp)}</b></div><div><div class="g">Сумма</div><b>${d.sum ? rub(d.sum) : '—'}</b></div><div><div class="g">Дата</div><b>${fdate(d.date)}</b></div><div><div class="g">Статус</div>${docTag(d.status)}</div></div>`); break; }
+    case 'docInfo': docModal(id); break;
+    case 'docRecog': recognizeDoc(id); break;
     case 'connect': { const s = DATA.sources.find(x => x.id === id); modal('Подключение: ' + s.name, `<p><b>Где взять ключ:</b> ${s.how}.</p><p class="mut" style="margin-top:10px">Ключи вписываются только в файл <code>.env</code> на сервере и никогда не попадают в браузер. ${(s.keys || []).length ? 'Скопируйте .env.example в .env, вставьте ключ и перезапустите сервер (npm start).' : 'Этот источник подключается на этапе 3.'}</p>${DATA.live ? '' : '<p class="warn" style="margin-top:10px">Сейчас страница открыта без сервера — работает демо-режим.</p>'}`); break; }
     case 'dtab': decTab = el.dataset.t; render(); break;
     case 'recalc': render(); toast('Решения пересчитаны по текущим данным'); break;
@@ -785,7 +825,11 @@ document.addEventListener('click', e => {
     case 'dPost': decState[id] = { status: 'postponed', until: isoD(3) }; saveAll(); render(); toast('Отложено на 3 дня'); break;
     case 'dRej': modal('Отклонить решение', `<div class="fld"><label>Причина (ИИ учтёт её в следующий раз)</label><textarea class="f-in" id="m_reason" rows="3"></textarea></div>`, () => { decState[id] = { status: 'rejected', reason: $('#m_reason').value.trim() }; saveAll(); render(); }); break;
     case 'dRestore': decState[id] = { status: 'new' }; saveAll(); render(); break;
-    case 'dAsk': { const d = allDecisions().find(x => x.id === id); aiOpen(); aiSay(`Обсудим: «${d.title}»`, true); aiSay(`${d.sit}\n\nПочему: ${d.why}\n\nУверенность ${d.conf}%. Проверять по метрике: ${d.metric}.`); break; }
+    case 'dAsk': {
+      const d = allDecisions().find(x => x.id === id);
+      if (DATA.live && srv?.ai) { aiOpen(`Обсудим решение «${d.title}». Ситуация: ${d.sit} Предлагаемые шаги: ${d.steps.join('; ')}. Стоит ли так делать, какие риски и что проверить по данным?`); break; }
+      aiOpen(); aiSay(`Обсудим: «${d.title}»`, true); aiSay(`${d.sit}\n\nПочему: ${d.why}\n\nУверенность ${d.conf}%. Проверять по метрике: ${d.metric}.`); break;
+    }
   }
 });
 document.addEventListener('change', e => {
@@ -798,6 +842,7 @@ document.addEventListener('change', e => {
 });
 $('#file').addEventListener('change', e => {
   const f = e.target.files[0]; if (!f) return;
+  if (DATA.live) { e.target.value = ''; uploadDoc(f); return; }
   docs.push({ id: 'd' + uid(), name: f.name, source: 'Загрузка', type: 'Документ', cp: '—', sum: 0, date: isoD(0), status: 'Новый' });
   saveAll(); e.target.value = ''; if (page !== 'docs') go('docs'); else render(); toast('Файл добавлен в документы');
 });
@@ -832,10 +877,58 @@ async function api(path, opt = {}) {
   if (!r.ok) throw new Error(j.error || 'Ошибка сервера ' + r.status);
   return j;
 }
-const pushTimers = {};
+// Синхронизация с сервером по одному элементу: отправляем только изменённые поля,
+// поэтому правки разных людей и документы, пришедшие с почты, не затирают друг друга
+const synced = {}, pushTimers = {};
+const entriesOf = (name, items) => (name === 'decisions' ? Object.entries(items || {}) : (items || []).map(x => [x.id, x]));
+const remember = (name, items) => { synced[name] = Object.fromEntries(entriesOf(name, items).map(([id, v]) => [id, JSON.stringify(v)])); };
 function pushStore(name, items) {
   clearTimeout(pushTimers[name]);
-  pushTimers[name] = setTimeout(() => api('/api/store/' + name, { method: 'PUT', body: JSON.stringify({ items }) }).catch(e => toast('Не сохранилось на сервере: ' + e.message)), 300);
+  pushTimers[name] = setTimeout(async () => {
+    const prev = synced[name] || {}, now = {};
+    try {
+      for (const [id, v] of entriesOf(name, items)) {
+        const j = JSON.stringify(v);
+        now[id] = j;
+        if (prev[id] === j) continue;
+        const old = prev[id] ? JSON.parse(prev[id]) : {};
+        const diff = Object.fromEntries(Object.entries(v).filter(([k, x]) => JSON.stringify(old[k]) !== JSON.stringify(x)));
+        await api(`/api/store/${name}/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(diff) });
+      }
+      for (const id of Object.keys(prev)) if (!(id in now)) await api(`/api/store/${name}/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      synced[name] = now;
+    } catch (e) { toast('Не сохранилось на сервере: ' + e.message); }
+  }, 300);
+}
+async function uploadDoc(f) {
+  try {
+    toast('Загружаю «' + f.name + '»…');
+    const r = await fetch('/api/docs/upload', { method: 'POST', body: f, headers: { 'Content-Type': f.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(f.name) } });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'ошибка ' + r.status);
+    await loadStore();
+    if (page !== 'docs') go('docs'); else render();
+    if (j.duplicate) { toast('Такой файл уже есть в документах'); return; }
+    if (j.doc.ai !== 'pending') { toast('Файл добавлен в документы'); return; }
+    toast('Файл загружен, ИИ читает документ…');
+    for (let i = 0; i < 60; i++) {
+      await new Promise(res => setTimeout(res, 3000));
+      await loadStore();
+      const d = docs.find(x => x.id === j.doc.id);
+      if (!d || d.ai === 'pending') continue;
+      render();
+      const n = tasks.filter(t => t.doc === d.id).length;
+      toast(d.ai === 'done' ? `Распознан: ${d.type}${d.cp ? ', ' + d.cp : ''}${n ? ` — создано задач: ${n}` : ''}` : 'Не удалось распознать: ' + d.aiError);
+      return;
+    }
+  } catch (e) { toast('Не загрузилось: ' + e.message); }
+}
+async function recognizeDoc(id) {
+  closeModal(); toast('ИИ перечитывает документ…');
+  try {
+    await api(`/api/docs/${encodeURIComponent(id)}/recognize`, { method: 'POST' });
+    await loadStore(); render(); docModal(id);
+  } catch (e) { toast('Не удалось: ' + e.message); }
 }
 function setDealStage(d, stage) {
   if (!d || !stage || d.stage === stage) { render(); return; }
@@ -865,14 +958,21 @@ function applyLive(r) {
   if (r.lastSync) lastSync = r.lastSync;
   syncing = !!r.syncing;
 }
+// С сервером задачи, сделки и документы общие для всей команды; демо-примеры из браузера туда не попадают
 async function loadStore() {
-  const map = { tasks: () => tasks, docs: () => docs, decisions: () => decState, deals: () => deals };
-  for (const k of Object.keys(map)) {
+  for (const k of ['tasks', 'docs', 'decisions', 'deals']) {
     if (k === 'deals' && crmLive) continue;
-    const r = await api('/api/store/' + k);
-    if (r.items == null) pushStore(k, map[k]()); // первый запуск: переносим то, что было в браузере
-    else if (k === 'tasks') tasks = r.items; else if (k === 'docs') docs = r.items; else if (k === 'decisions') decState = r.items; else deals = r.items;
+    const items = (await api('/api/store/' + k)).items ?? (k === 'decisions' ? {} : []);
+    if (k === 'tasks') tasks = items; else if (k === 'docs') docs = items; else if (k === 'decisions') decState = items; else deals = items;
+    remember(k, items);
   }
+}
+// Новые документы с почты и из Telegram и правки коллег подтягиваются раз в 30 секунд
+async function pollStore() {
+  if (dragId || $('#mod') || Object.values(pushTimers).length && Date.now() - lastEdit < 2000) return;
+  const before = JSON.stringify(synced);
+  await loadStore();
+  if (JSON.stringify(synced) !== before) render();
 }
 async function refreshLive() {
   applyLive(await api('/api/dashboard'));
@@ -903,6 +1003,7 @@ async function boot() {
     await loadStore();
     render();
     setInterval(() => { if (!syncing) refreshLive().catch(() => {}); }, 5 * 60000);
+    setInterval(() => pollStore().catch(() => {}), 30000);
   } catch (e) {
     console.warn('Сервер недоступен — демо-режим:', e.message);
   }

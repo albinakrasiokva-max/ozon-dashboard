@@ -1,14 +1,21 @@
 {
   "name": "brandos",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Дашборд для селлера Wildberries и Ozon",
   "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test test/calc.test.js",
+    "test": "node --test test/calc.test.js test/docs.test.js",
     "check": "node test/report.js"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.133.0",
+    "imapflow": "^2.4.0",
+    "mailparser": "^3.9.38"
+  }
 }

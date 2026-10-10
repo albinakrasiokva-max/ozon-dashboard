@@ -9,40 +9,74 @@ import { getDb, saveDb } from './lib/db.js';
 import { getSettings } from './lib/settings.js';
 import { buildDashboard } from './lib/aggregate.js';
 import { syncAll, isSyncing, enabledKeys, sourceStatus, startScheduler, crmSource } from './lib/sync.js';
+import { ingest, recognize, filePath } from './lib/docs.js';
+import { aiEnabled, chat } from './lib/ai.js';
+import { snapshotForAI } from './lib/snapshot.js';
+import { startTelegram } from './lib/telegram.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 loadEnv(path.join(ROOT, '.env'));
 process.env.TZ ||= 'Europe/Moscow'; // дни считаются по Москве, если не задано иное
 process.chdir(ROOT); // settings.json и data/ — рядом с server.js
 
-const STORES = ['tasks', 'docs', 'decisions', 'deals'];
+const LISTS = ['tasks', 'docs', 'deals']; // массивы элементов с id
+const MAPS = ['decisions'];               // объект {id: состояние}
 const MAX_BODY = 5 * 1024 * 1024;
+const MAX_UPLOAD = 25 * 1024 * 1024;
 
 const send = (res, code, obj) => {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(obj));
 };
+const fail = (status, message) => Object.assign(new Error(message), { status });
 
-async function readBody(req) {
+async function readRaw(req, limit) {
   const chunks = [];
   let size = 0;
   for await (const c of req) {
     size += c.length;
-    if (size > MAX_BODY) throw Object.assign(new Error('Слишком большой запрос'), { status: 413 });
+    if (size > limit) throw fail(413, `Слишком большой файл (больше ${Math.round(limit / 1048576)} МБ)`);
     chunks.push(c);
   }
-  const text = Buffer.concat(chunks).toString('utf8');
-  try { return text ? JSON.parse(text) : {}; } catch { throw Object.assign(new Error('Некорректный JSON'), { status: 400 }); }
+  return Buffer.concat(chunks);
+}
+async function readBody(req) {
+  const text = (await readRaw(req, MAX_BODY)).toString('utf8');
+  try { return text ? JSON.parse(text) : {}; } catch { throw fail(400, 'Некорректный JSON'); }
 }
 
 function dashboard() {
   const db = getDb();
-  return { ...buildDashboard({ raw: db.raw, enabled: enabledKeys(), settings: getSettings() }), lastSync: db.lastSync, syncing: isSyncing() };
+  return { ...buildDashboard({ raw: db.raw, enabled: enabledKeys(), settings: getSettings() }), lastSync: db.lastSync, syncing: isSyncing(), ai: aiEnabled() };
+}
+
+// Элементы задач/сделок/документов меняются по одному — так правки разных людей не затирают друг друга
+function storeOp(name, id, method, body) {
+  const db = getDb();
+  if (MAPS.includes(name)) {
+    const map = (db.store[name] && typeof db.store[name] === 'object' && !Array.isArray(db.store[name])) ? db.store[name] : (db.store[name] = {});
+    if (method === 'DELETE') delete map[id]; else map[id] = { ...(map[id] || {}), ...body };
+    return map[id] ?? null;
+  }
+  const list = Array.isArray(db.store[name]) ? db.store[name] : (db.store[name] = []);
+  const i = list.findIndex(x => x.id === id);
+  if (method === 'DELETE') {
+    if (i < 0) return null;
+    const [gone] = list.splice(i, 1);
+    if (name === 'docs' && gone.file) fs.rm(filePath(gone), () => {});
+    return gone;
+  }
+  const clean = { ...body };
+  for (const k of ['id', 'file', 'hash', 'mime', 'size', 'externalId']) delete clean[k]; // служебные поля не меняются из браузера
+  if (i < 0) { const item = { ...clean, id }; list.push(item); return item; }
+  Object.assign(list[i], clean);
+  return list[i];
 }
 
 async function handle(req, res) {
   const url = new URL(req.url, 'http://localhost');
   const p = url.pathname, method = req.method;
+  let m;
 
   if (method === 'GET' && (p === '/' || p === '/index.html')) {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
@@ -51,40 +85,83 @@ async function handle(req, res) {
   if (method === 'GET' && p === '/api/health') return send(res, 200, { ok: true });
   if (method === 'GET' && p === '/api/dashboard') return send(res, 200, dashboard());
   if (method === 'GET' && p === '/api/status') {
-    return send(res, 200, { sources: sourceStatus(), syncing: isSyncing(), lastSync: getDb().lastSync });
+    return send(res, 200, { sources: sourceStatus(), syncing: isSyncing(), lastSync: getDb().lastSync, ai: aiEnabled() });
   }
   if (method === 'POST' && p === '/api/sync') {
     syncAll().catch(e => console.error('[sync]', e.message));
     return send(res, 202, { started: true });
   }
 
-  // Общие данные команды: задачи, документы, решения, сделки (если CRM не подключена)
-  const sm = p.match(/^\/api\/store\/([a-z]+)$/);
-  if (sm && STORES.includes(sm[1])) {
+  // Общие данные команды
+  if ((m = p.match(/^\/api\/store\/([a-z]+)$/)) && method === 'GET' && [...LISTS, ...MAPS].includes(m[1])) {
+    return send(res, 200, { items: getDb().store[m[1]] ?? (MAPS.includes(m[1]) ? {} : []) });
+  }
+  if ((m = p.match(/^\/api\/store\/([a-z]+)\/([\w-]{1,64})$/)) && [...LISTS, ...MAPS].includes(m[1]) && ['PATCH', 'DELETE'].includes(method)) {
+    const body = method === 'PATCH' ? await readBody(req) : {};
+    if (typeof body !== 'object' || Array.isArray(body) || body === null) throw fail(400, 'Ожидается объект');
+    const item = storeOp(m[1], m[2], method, body);
+    saveDb();
+    return send(res, 200, { ok: true, item });
+  }
+
+  // Документы: загрузка файла, скачивание, повторное распознавание
+  if (method === 'POST' && p === '/api/docs/upload') {
+    const name = decodeURIComponent(String(req.headers['x-file-name'] || 'документ')).slice(0, 200);
+    const buffer = await readRaw(req, MAX_UPLOAD);
+    if (!buffer.length) throw fail(400, 'Пустой файл');
+    const { doc, duplicate } = ingest({ source: 'Загрузка', name, buffer, mime: req.headers['content-type'], from: 'вручную' });
+    return send(res, duplicate ? 200 : 201, { doc, duplicate });
+  }
+  if ((m = p.match(/^\/api\/docs\/([\w-]{1,64})\/file$/)) && method === 'GET') {
+    const doc = (getDb().store.docs || []).find(d => d.id === m[1]);
+    if (!doc?.file || !fs.existsSync(filePath(doc))) throw fail(404, 'Файл не найден');
+    res.writeHead(200, {
+      'Content-Type': doc.mime || 'application/octet-stream',
+      'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(doc.name)}`,
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox"
+    });
+    return fs.createReadStream(filePath(doc)).pipe(res);
+  }
+  if ((m = p.match(/^\/api\/docs\/([\w-]{1,64})\/recognize$/)) && method === 'POST') {
+    if (!aiEnabled()) throw fail(409, 'Нет ключа Claude API — распознавание выключено');
+    const doc = (getDb().store.docs || []).find(d => d.id === m[1]);
+    if (!doc) throw fail(404, 'Документ не найден');
+    doc.ai = 'pending'; doc.aiError = '';
+    const r = await recognize(doc.id);
+    return send(res, 200, r);
+  }
+
+  // ИИ-чат по живым данным
+  if (method === 'POST' && p === '/api/chat') {
+    if (!aiEnabled()) throw fail(409, 'Нет ключа Claude API — чат работает на встроенных правилах');
+    const b = await readBody(req);
+    const history = (Array.isArray(b.messages) ? b.messages : [])
+      .filter(x => (x.role === 'user' || x.role === 'assistant') && typeof x.text === 'string' && x.text.trim())
+      .slice(-20).map(x => ({ role: x.role, text: x.text.slice(0, 4000) }));
+    while (history.length && history[0].role !== 'user') history.shift();
+    if (!history.length || history[history.length - 1].role !== 'user') throw fail(400, 'Нет вопроса');
     const db = getDb();
-    if (method === 'GET') return send(res, 200, { items: db.store[sm[1]] ?? null });
-    if (method === 'PUT') {
-      const b = await readBody(req);
-      if (!Array.isArray(b.items) && (typeof b.items !== 'object' || b.items === null)) return send(res, 400, { error: 'Ожидается поле items' });
-      db.store[sm[1]] = b.items;
-      saveDb();
-      return send(res, 200, { ok: true });
+    const snap = snapshotForAI(dashboard(), db.store, sourceStatus());
+    try {
+      return send(res, 200, { text: await chat(history, snap) });
+    } catch (e) {
+      throw fail(502, e.message);
     }
   }
 
   // Сделки CRM: перенос этапа и правки записываются обратно в amoCRM / Битрикс24
-  const dm = p.match(/^\/api\/deals(?:\/([\w-]+))?$/);
-  if (dm && (method === 'POST' || method === 'PATCH')) {
+  if ((m = p.match(/^\/api\/deals(?:\/([\w-]+))?$/)) && (method === 'POST' || method === 'PATCH')) {
     const src = crmSource();
-    if (!src) return send(res, 409, { error: 'CRM не подключена — сделки хранятся на дашборде' });
+    if (!src) throw fail(409, 'CRM не подключена — сделки хранятся на дашборде');
     const db = getDb(), raw = db.raw[src.key];
-    if (!raw) return send(res, 409, { error: 'Данные CRM ещё не загружены — дождитесь синхронизации' });
+    if (!raw) throw fail(409, 'Данные CRM ещё не загружены — дождитесь синхронизации');
     const b = await readBody(req);
     const v = { title: b.title ? String(b.title) : undefined, sum: b.sum, stage: b.stage ? String(b.stage) : undefined };
     try {
       if (method === 'PATCH') {
-        await src.mod.updateDeal(raw, dm[1], v);
-        const d = raw.deals.find(x => x.id === dm[1]);
+        await src.mod.updateDeal(raw, m[1], v);
+        const d = raw.deals.find(x => x.id === m[1]);
         if (d) Object.assign(d, Object.fromEntries(Object.entries(v).filter(([, x]) => x !== undefined)));
         saveDb();
         return send(res, 200, { ok: true });
@@ -94,7 +171,7 @@ async function handle(req, res) {
       saveDb();
       return send(res, 201, { ok: true, id });
     } catch (e) {
-      return send(res, 502, { error: e.message });
+      throw fail(502, e.message);
     }
   }
 
@@ -103,7 +180,7 @@ async function handle(req, res) {
 
 const server = http.createServer((req, res) => {
   handle(req, res).catch(e => {
-    console.error(`[http] ${req.method} ${req.url}: ${e.message}`);
+    if (!e.status) console.error(`[http] ${req.method} ${req.url}: ${e.message}`);
     if (!res.headersSent) send(res, e.status || 500, { error: e.status ? e.message : 'Внутренняя ошибка сервера' });
   });
 });
@@ -113,11 +190,12 @@ const HOST = process.env.HOST || '127.0.0.1';
 server.listen(PORT, HOST, () => {
   const on = enabledKeys();
   console.log(`BrandOS: http://${HOST}:${PORT}`);
-  console.log(on.length ? `Подключены источники: ${on.join(', ')}` : 'Ключей в .env нет — дашборд работает на демо-данных.');
-  if (process.env.NO_SYNC === '1') return console.log('NO_SYNC=1 — синхронизация отключена, показываются сохранённые данные.');
+  console.log(on.length ? `Подключены: ${on.join(', ')}` : 'Ключей в .env нет — дашборд работает на демо-данных.');
+  if (process.env.NO_SYNC === '1') return console.log('NO_SYNC=1 — синхронизация и бот отключены, показываются сохранённые данные.');
   const min = startScheduler(getSettings().syncMinutes);
   if (on.length) {
     console.log(`Синхронизация каждые ${min} мин.`);
     syncAll().catch(() => {});
   }
+  startTelegram();
 });

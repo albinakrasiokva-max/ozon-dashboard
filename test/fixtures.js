@@ -36,6 +36,11 @@ const API = {
     { supplierArticle: 'A1', nmId: 111, subject: 'Бандаж', quantity: 20, inWayFromClient: 0 },
     { supplierArticle: 'A2', nmId: 222, subject: 'Ортез', quantity: 10, inWayFromClient: 0 }
   ],
+  // ---- Документы WB ----
+  'documents-api.wildberries.ru/api/v1/documents/list': () => ({ data: { documents: [
+    { serviceName: 'act-2026-1', name: 'Акт оказания услуг', category: 'Акты', extensions: ['pdf'], creationTime: D(2) + 'T10:00:00Z' },
+    { serviceName: 'report-zip', name: 'Детализация', category: 'Отчёты', extensions: ['zip'], creationTime: D(3) + 'T10:00:00Z' }] } }),
+  'documents-api.wildberries.ru/api/v1/documents/download': () => ({ data: { fileName: 'Акт WB.pdf', extension: 'pdf', document: Buffer.from('%PDF-1.4 акт WB').toString('base64') } }),
   // ---- Реклама WB ----
   'advert-api.wildberries.ru/adv/v1/promotion/count': () => ({ adverts: [{ type: 8, status: 9, count: 1, advert_list: [{ advertId: 101, changeTime: new Date().toISOString() }] }] }),
   'advert-api.wildberries.ru/adv/v1/promotion/adverts': () => [{ advertId: 101, name: 'Авто A1' }],
@@ -74,19 +79,37 @@ const API = {
 export const calls = [];
 
 // failing: { 'api-seller.ozon.ru': 401 } — сервис отвечает ошибкой
-export function installMock(failing = {}) {
+// extra: { 'адрес': (url, opt) => тело ответа | Buffer } — дополнительные ответы (Claude, Telegram)
+const mock = { failing: {}, routes: API };
+export function installMock(failing = {}, extra = {}) {
   calls.length = 0;
-  globalThis.fetch = async (url, opt = {}) => {
-    const u = String(url).replace(/^https:\/\//, '');
+  mock.failing = failing;
+  mock.routes = { ...API, ...extra };
+  globalThis.fetch = mockFetch;
+}
+// Одна и та же функция: SDK Claude запоминает fetch при создании клиента
+async function mockFetch(url, opt = {}) {
+  const { failing, routes } = mock;
+  {
+    const u = String(url instanceof Request ? url.url : url).replace(/^https:\/\//, '');
     calls.push({ url: u, method: opt.method || 'GET', body: opt.body, headers: opt.headers });
     for (const [host, status] of Object.entries(failing)) {
-      if (u.startsWith(host)) return new Response(JSON.stringify({ message: 'Invalid token' }), { status });
+      if (u.startsWith(host)) return new Response(JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' }, message: 'Invalid token' }), { status, headers: { 'Content-Type': 'application/json' } });
     }
-    const key = Object.keys(API).sort((a, b) => b.length - a.length).find(k => u.startsWith(k));
+    const key = Object.keys(routes).sort((a, b) => b.length - a.length).find(k => u.startsWith(k));
     if (!key) return new Response(JSON.stringify({ message: 'not mocked: ' + u }), { status: 404 });
-    return new Response(JSON.stringify(API[key]()), { status: 200, headers: { 'Content-Type': 'application/json' } });
-  };
+    const body = await routes[key](u, opt);
+    if (Buffer.isBuffer(body)) return new Response(body, { status: 200, headers: { 'Content-Type': 'application/octet-stream' } });
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
 }
+
+// Ответ Claude Messages API в формате API
+export const claudeMessage = text => ({
+  id: 'msg_test', type: 'message', role: 'assistant', model: 'claude-opus-5-5',
+  content: [{ type: 'text', text }], stop_reason: 'end_turn', stop_sequence: null,
+  usage: { input_tokens: 10, output_tokens: 10 }
+});
 
 export function setupEnv() {
   Object.assign(process.env, {
@@ -95,5 +118,5 @@ export function setupEnv() {
     OZON_PERF_CLIENT_ID: 'p', OZON_PERF_CLIENT_SECRET: 's',
     AMO_SUBDOMAIN: 'test', AMO_TOKEN: 'amo-test', TBANK_TOKEN: 'tb-test'
   });
-  for (const k of ['BITRIX_WEBHOOK_URL', 'TOCHKA_TOKEN', 'WB_ADS', 'AMO_PIPELINE_ID']) delete process.env[k];
+  for (const k of ['BITRIX_WEBHOOK_URL', 'TOCHKA_TOKEN', 'WB_ADS', 'WB_DOCS', 'AMO_PIPELINE_ID', 'ANTHROPIC_API_KEY', 'TELEGRAM_BOT_TOKEN', 'MAIL_USER', 'DIADOC_API_KEY']) delete process.env[k];
 }

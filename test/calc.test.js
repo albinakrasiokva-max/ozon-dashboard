@@ -38,7 +38,11 @@ function expected() {
 
 test('все источники синхронизировались без ошибок', () => {
   for (const s of sourceStatus().filter(s => s.enabled)) assert.equal(s.error, null, s.name);
-  assert.deepEqual(enabledKeys().sort(), ['amocrm', 'ozon', 'ozonPerf', 'tbank', 'wb', 'wbAds']);
+  assert.deepEqual(enabledKeys().sort(), ['amocrm', 'ozon', 'ozonPerf', 'tbank', 'wb', 'wbAds', 'wbDocs']);
+  // Документы WB: PDF взят, zip пропущен; без ключа Claude документ не распознаётся
+  assert.equal(getDb().raw.wbDocs.lastAdded, 1);
+  const doc = getDb().store.docs.find(d => d.source === 'WB');
+  assert.equal(doc.name, 'Акт WB.pdf'); assert.equal(doc.ai, 'off'); assert.equal(doc.date, D(2));
 });
 
 test('ключи уходят только в заголовках и только своим сервисам', () => {
@@ -150,7 +154,8 @@ test('сервер без ключей отдаёт index.html и демо-фл�
     const html = await (await fetchReal('http://127.0.0.1:3917/')).text();
     assert.match(html, /BrandOS/);
     const d = await (await fetchReal('http://127.0.0.1:3917/api/dashboard')).json();
-    assert.equal(d.demo.revenue, true); assert.equal(d.demo.cash, true); assert.equal(d.demo.crm, true);
+    assert.equal(d.demo.revenue, true); assert.equal(d.demo.cash, true);
+    assert.equal(d.demo.crm, false, 'без CRM сделки ведутся вручную — это не демо');
     assert.equal(d.kpi.revenue, undefined, 'без источника цифры не выдумываются');
     const st = await (await fetchReal('http://127.0.0.1:3917/api/status')).json();
     assert.ok(st.sources.every(s => !s.enabled));
