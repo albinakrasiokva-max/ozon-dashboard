@@ -970,15 +970,18 @@ function buildModel(pk) {
   const taxRate = ok(R.tax) ? R.tax / 100 : null;
   M.taxSet = taxRate != null; M.ratesSet = !!R.configured;
   const all = Object.values(M.byId);
-  const totalNet = sum(all, s => Math.max(0, s.soldAmt + s.soldLoyal - s.retAmt - s.retLoyal));
-  const accNet = sum(all.filter(s => s.accr), s => Math.max(0, s.soldAmt + s.soldLoyal - s.retAmt - s.retLoyal));
+  const totalNet = sum(all, s => Math.max(0, s.soldAmt - s.retAmt));
+  const accNet = sum(all.filter(s => s.accr), s => Math.max(0, s.soldAmt - s.retAmt));
 
   for (const s of all) {
     s.category = categoryOf(s);
-    // Выручка: реализовано + выплаты по лояльности − возвраты
-    s.gross = s.soldAmt + s.soldLoyal;
-    s.returns = s.retAmt + s.retLoyal;
+    // Выручка — как доход в документах Ozon («Отчёт о реализации»): реализовано − возвраты, без баллов.
+    // Баллы за скидки Ozon доплачивает за покупателя и в своих актах вычитает из вознаграждения —
+    // так же и здесь: они уменьшают комиссию. Прибыль и выплата от этого не меняются.
+    s.gross = s.soldAmt;
+    s.returns = s.retAmt;
     s.net = s.gross - s.returns;
+    s.points = s.soldLoyal - s.retLoyal;
     s.netQty = s.soldQty - s.retQty;
     s.avgPrice = s.soldQty ? s.gross / s.soldQty : (priceItems[s.sku]?.buyerPrice ?? null);
     // Себестоимость
@@ -1002,6 +1005,7 @@ function buildModel(pk) {
       f.other = s.soldQty * (R.other || 0);
       s.feeSrc = 'rates';
     } else s.feeSrc = 'none';
+    f.commission -= s.points;
     s.fees = f;
     s.ads.total = s.ads.direct + s.ads.shared + (f.ads || 0);
     // Налог — от суммы реализации: «Продажи → Выручка» минус «Возврат выручки» (в отчёте о реализации это
@@ -1552,7 +1556,7 @@ function renderProductsTable() {
     { key: 'acq', label: 'Эквайринг', num: 1, val: s => s.fees.acquiring, fmt: fee() },
     { key: 'log', label: 'Логистика', num: 1, val: s => s.fees.logistics, fmt: fee() },
     { key: 'stor', label: 'Хранение', num: 1, val: s => s.fees.storage, fmt: fee() },
-    { key: 'comm', label: 'Комиссия', num: 1, val: s => s.fees.commission, fmt: fee() },
+    { key: 'comm', label: 'Комиссия за вычетом баллов', num: 1, val: s => s.fees.commission, fmt: fee() },
     { key: 'ads', label: 'Реклама', num: 1, val: s => s.ads.total, fmt: (v, s) => M.have.ads || s.accr ? rub(v) : '<span class="faint">нет отчёта</span>' },
     { key: 'drr', label: 'ДРР', num: 1, val: s => s.drr, fmt: v => pct(v) },
     { key: 'tax', label: 'Налоги', num: 1, val: s => s.tax, fmt: v => M.taxSet ? rub(v) : '<span class="faint" title="Ставка налога не задана">—</span>' },
@@ -1577,7 +1581,7 @@ function productDetail(s) {
   let wf;
   if (!s.hasSales) wf = stub('Нет продаж за период.');
   else {
-    const items = [['Выручка', s.gross, 'plus'], ['Возвраты', -s.returns], ['Себестоимость', s.cogs != null ? -s.cogs : null], ['Комиссия', -s.fees.commission], ['Эквайринг', -s.fees.acquiring], ['Логистика', -s.fees.logistics], ['Хранение', -s.fees.storage], ['Штрафы и прочее', -(s.fees.penalties + s.fees.other)], ['Реклама', -s.ads.total], ['Налог', -s.tax], ['Прибыль', s.profit, 'res']];
+    const items = [['Выручка', s.gross, 'plus'], ['Возвраты', -s.returns], ['Себестоимость', s.cogs != null ? -s.cogs : null], ['Комиссия за вычетом баллов', -s.fees.commission], ['Эквайринг', -s.fees.acquiring], ['Логистика', -s.fees.logistics], ['Хранение', -s.fees.storage], ['Штрафы и прочее', -(s.fees.penalties + s.fees.other)], ['Реклама', -s.ads.total], ['Налог', -s.tax], ['Прибыль', s.profit, 'res']];
     const max = s.gross || 1;
     wf = items.map(([l, v, t]) => `<div class="wf-row"><span class="muted">${l}</span><span>${ok(v) ? `<div class="wf-bar ${t || ''} ${t === 'res' && v < 0 ? 'neg' : ''}" style="width:${Math.min(100, Math.abs(v) / max * 100)}%"></div>` : ''}</span><span class="num">${ok(v) ? rub(v) : l === 'Прибыль' ? whyNot(s) : l === 'Себестоимость' ? costLink(s.sku) : '—'}</span></div>`).join('')
       + (s.feeSrc === 'none' ? '<p class="small warn" style="margin-top:6px">Удержания Ozon не заданы.</p>' : s.feeSrc === 'rates' ? '<p class="small muted" style="margin-top:6px">Удержания — по ставкам, это оценка.</p>' : '');
