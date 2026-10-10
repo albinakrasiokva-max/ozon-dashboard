@@ -227,6 +227,15 @@ test('ошибка ключа показывается понятным текс
   installMock();
 });
 
+test('OZON_ONLY=1 — на главной «Аналитика Ozon»', async () => {
+  const env = { PATH: process.env.PATH, PORT: '3918', OZON_ONLY: '1', DATA_DIR: process.env.DATA_DIR + '-srv2' };
+  const p = spawn(process.execPath, ['server.js'], { env, cwd: new URL('..', import.meta.url).pathname });
+  try {
+    for (let i = 0; i < 50; i++) { try { await fetchReal('http://127.0.0.1:3918/api/health'); break; } catch { await new Promise(r => setTimeout(r, 100)); } }
+    assert.match(await (await fetchReal('http://127.0.0.1:3918/')).text(), /Аналитика магазина на Ozon/);
+  } finally { p.kill(); }
+});
+
 test('сервер без ключей отдаёт index.html и демо-флаги', async () => {
   const env = { PATH: process.env.PATH, PORT: '3917', DATA_DIR: process.env.DATA_DIR + '-srv' };
   const p = spawn(process.execPath, ['server.js'], { env, cwd: new URL('..', import.meta.url).pathname });
