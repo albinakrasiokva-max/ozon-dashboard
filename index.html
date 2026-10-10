@@ -210,11 +210,11 @@ const DATA = {
   team: ['Алексей', 'Мария (менеджер)', 'Игорь (склад)', 'Елена (бухгалтер)', 'Дмитрий (маркетолог)'],
   settings: { maxDrr: 15, minDaysStock: 14, monthPlan: 4000000, avgDaily: 121000, profitRate: 0.172, margin: 17.2 },
   sources: [
-    { id: 'wb',   short: 'WB',   name: 'Wildberries',      status: 'demo', desc: 'Продажи, заказы, остатки, возвраты, реклама WB', how: 'ЛК продавца → Профиль → Настройки → Доступ к API (Статистика, Аналитика, Документы, Продвижение — только чтение)' },
-    { id: 'ozon', short: 'Ozon', name: 'Ozon Seller',      status: 'demo', desc: 'Выручка, комиссии, логистика, остатки', how: 'Ozon Seller → Настройки → API ключи, роль Admin read only (Client-Id и API-ключ)' },
-    { id: 'perf', short: 'Perf', name: 'Ozon Performance', status: 'demo', desc: 'Реклама Ozon: расход, заказы, ДРР', how: 'performance.ozon.ru → Настройки → API (client_id и client_secret)' },
-    { id: 'bank', short: 'Банк', name: 'Банк (Т-Банк / Точка)', status: 'demo', desc: 'Остатки на счетах, выписка', how: 'Интеграции → API → токен на чтение счетов и выписок' },
-    { id: 'crm',  short: 'CRM',  name: 'CRM (amoCRM / Битрикс24)', status: 'demo', desc: 'Воронка и сделки', how: 'amoCRM: долгосрочный токен + поддомен. Битрикс24: входящий вебхук с правами crm' },
+    { id: 'wb', keys: ['wb', 'wbAds'], short: 'WB',   name: 'Wildberries',      status: 'demo', desc: 'Продажи, заказы, остатки, возвраты, реклама WB', how: 'ЛК продавца → Профиль → Настройки → Доступ к API (Статистика, Аналитика, Документы, Продвижение — только чтение)' },
+    { id: 'ozon', keys: ['ozon'], short: 'Ozon', name: 'Ozon Seller',      status: 'demo', desc: 'Выручка, комиссии, логистика, остатки', how: 'Ozon Seller → Настройки → API ключи, роль Admin read only (Client-Id и API-ключ)' },
+    { id: 'perf', keys: ['ozonPerf'], short: 'Perf', name: 'Ozon Performance', status: 'demo', desc: 'Реклама Ozon: расход, заказы, ДРР', how: 'performance.ozon.ru → Настройки → API (client_id и client_secret)' },
+    { id: 'bank', keys: ['tbank', 'tochka'], short: 'Банк', name: 'Банк (Т-Банк / Точка)', status: 'demo', desc: 'Остатки на счетах, выписка', how: 'Интеграции → API → токен на чтение счетов и выписок' },
+    { id: 'crm', keys: ['amocrm', 'bitrix'], short: 'CRM',  name: 'CRM (amoCRM / Битрикс24)', status: 'demo', desc: 'Воронка и сделки', how: 'amoCRM: долгосрочный токен + поддомен. Битрикс24: входящий вебхук с правами crm' },
     { id: 'mail', short: 'Почта', name: 'Почта (IMAP)',    status: 'demo', desc: 'Документы из вложений писем', how: 'Адрес, IMAP-сервер и пароль приложения' },
     { id: 'tg',   short: 'TG',   name: 'Telegram-бот',     status: 'demo', desc: 'Документы, которые вы пересылаете боту', how: '@BotFather → /newbot → токен' },
     { id: 'edo',  short: 'ЭДО',  name: 'Диадок',           status: 'demo', desc: 'Входящие акты и УПД, ожидающие подписи', how: 'Ключ разработчика на developer.kontur.ru, логин и пароль' },
@@ -321,6 +321,20 @@ DATA.forecast = (() => {
   return out;
 })();
 DATA.gap = DATA.forecast.find(p => p.i > 0 && p.bal < 0) || null;
+(() => {
+  const now = new Date(), day = now.getDate(), dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const s = DATA.settings, fact = s.avgDaily * day, K = DATA.kpiDelta, SP = DATA.kpiSpark;
+  DATA.plan = { fact, plan: s.monthPlan, fc: s.avgDaily * dim, day, dim };
+  DATA.kpi = {
+    revenue: { v: fact, d: K.revenue, spark: SP.revenue },
+    profit: { v: fact * s.profitRate, d: K.profit, spark: SP.profit },
+    margin: { v: s.margin, d: K.margin, unit: 'pp', spark: SP.margin },
+    cash: { v: DATA.forecast.find(p => p.i === 0).bal, d: K.cash, spark: SP.cash }
+  };
+})();
+// В демо-режиме все блоки демо. С сервером здесь будет карта {блок: true/false}.
+DATA.demoBlocks = {};
+DATA.notes = [];
 
 /* ===================== утилиты ===================== */
 const $ = s => document.querySelector(s);
@@ -340,6 +354,14 @@ const save = (k, v) => { try { localStorage.setItem('bos_' + k, JSON.stringify(v
 const initials = s => (s || '?').split(/[ (]/)[0].slice(0, 2).toUpperCase();
 function toast(t) { const e = document.createElement('div'); e.className = 'toast'; e.textContent = t; document.body.appendChild(e); setTimeout(() => e.remove(), 2400); }
 const demoTag = '<span class="demo">демо</span>';
+const dm = b => (DATA.demoBlocks[b] === false ? '' : demoTag);
+const isLive = b => DATA.demoBlocks[b] === false;
+// Правило Центра решений работает на демо-данных только в демо-режиме — живые решения не строятся из выдуманных цифр
+const ruleOk = b => !DATA.live || isLive(b);
+// Последний этап воронки — успешная сделка (так и в amoCRM, и в Битрикс24)
+const isWon = d => d.stage === DATA.stages[DATA.stages.length - 1];
+const daysTxt = d => (isFinite(d) ? Math.floor(d) + ' дн.' : '∞');
+const barsHtml = (arr, h) => { const mx = Math.max(...arr, 1); return `<div class="bars"${h ? ` style="height:${h}px"` : ''}>${arr.map(v => `<i style="height:${Math.max(0, v) / mx * 100}%" title="${rub(v)}"></i>`).join('')}</div>`; };
 
 /* ===================== состояние ===================== */
 let tasks = load('tasks', null) || DATA.seed.tasks.map(t => ({ id: uid(), title: t.title, desc: '', status: t.status, prio: t.prio, due: isoD(t.d), who: t.who, ai: t.ai, doc: t.doc || '' }));
@@ -350,21 +372,24 @@ let fTasks = { who: '', prio: '', ai: false, quick: '' };
 let fDocs = { src: '' };
 let decTab = 'new';
 let lastSync = load('sync', null) || new Date().toISOString();
-const saveAll = () => { save('tasks', tasks); save('deals', deals); save('docs', docs); save('decisions', decState); };
+let crmLive = false, syncing = false, srv = null;
+const saveAll = () => {
+  save('tasks', tasks); save('deals', deals); save('docs', docs); save('decisions', decState);
+  if (DATA.live) { pushStore('tasks', tasks); pushStore('docs', docs); pushStore('decisions', decState); if (!crmLive) pushStore('deals', deals); }
+};
 
 /* ===================== расчёты ===================== */
 const skuCalc = s => {
-  const profit = s.rev * (1 - s.cogs - s.fees) - s.ads;
-  return { ...s, profit, margin: profit / s.rev * 100, drr: s.ads / s.rev * 100, daily: s.sold / 28, days: s.stock / (s.sold / 28) };
+  const profit = s.rev * (1 - s.cogs - s.fees) - s.ads, daily = Math.max(0, s.sold) / 28;
+  return { ...s, profit, margin: s.rev ? profit / s.rev * 100 : 0, drr: s.rev ? s.ads / s.rev * 100 : 0, daily, days: daily ? s.stock / daily : Infinity };
 };
 const SKUS = () => DATA.skus.map(skuCalc);
-const CAMPS = () => DATA.campaigns.map(c => ({ ...c, drr: c.spend / c.rev * 100, cpo: c.spend / c.orders }));
+const CAMPS = () => DATA.campaigns.map(c => ({ ...c, drr: c.rev ? c.spend / c.rev * 100 : c.spend ? 999 : 0, cpo: c.orders ? c.spend / c.orders : 0 }));
 function planInfo() {
-  const now = new Date(), day = now.getDate(), dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const s = DATA.settings, fact = s.avgDaily * day, fc = s.avgDaily * dim;
-  return { day, dim, fact, fc, plan: s.monthPlan, p: Math.min(100, fact / s.monthPlan * 100), fcp: fc / s.monthPlan * 100 };
+  const P = DATA.plan;
+  return { ...P, p: P.plan ? Math.min(100, P.fact / P.plan * 100) : 0, fcp: P.plan ? P.fc / P.plan * 100 : 0 };
 }
-const cashNow = () => DATA.forecast.find(p => p.i === 0).bal;
+const cashNow = () => DATA.kpi.cash.v;
 const taskCounts = () => {
   const t = isoD(0), open = tasks.filter(x => x.status !== 'done');
   return { open: open.length, today: open.filter(x => x.due === t).length, over: open.filter(x => x.due && x.due < t).length };
@@ -403,24 +428,24 @@ function forecastChart() {
 /* ===================== Центр решений: встроенные правила ===================== */
 function buildDecisions() {
   const out = [], S = SKUS(), C = CAMPS(), set = DATA.settings, pi = planInfo();
-  if (DATA.gap) {
+  if (DATA.gap && ruleOk('forecast')) {
     const g = DATA.gap, need = Math.abs(Math.min(...DATA.forecast.filter(p => p.i > 0).map(p => p.bal)));
     out.push({ id: 'gap', dir: 'Финансы', urg: 'high', title: `Закрыть кассовый разрыв до ${fshort(addD(g.i))}`, sit: `По прогнозу к ${fshort(addD(g.i))} на счетах не хватит денег: минимум ≈ −${mln(need)}. Крупные платежи: ${DATA.cashEvents.filter(e => e.i >= g.i - 3 && e.i <= g.i).map(e => e.name + ' ' + mln(e.amt)).join(', ')}.`, why: 'Разрыв приведёт к просрочке платежей. Проще сдвинуть закупку или взять овердрафт заранее.', steps: ['Договориться с поставщиком о переносе части платежа на 7–10 дней', 'Подключить овердрафт в банке на сумму разрыва', 'Ускорить выплаты МП: проверить удержания и возвраты'], effect: need, due: isoD(Math.max(1, g.i - 5)), conf: 80, metric: 'Минимальный остаток на счетах за 30 дней ≥ 0 ₽' });
   }
-  S.filter(s => s.days < set.minDaysStock).sort((a, b) => a.days - b.days).forEach(s => {
-    const qty = Math.round(s.daily * 45 / 10) * 10;
-    out.push({ id: 'stock-' + s.art, dir: 'Склад', urg: s.days < 7 ? 'high' : 'med', title: `Дозаказать арт. ${s.art} — ${qty} шт.`, sit: `«${s.name}»: остаток ${s.stock} шт., продаём ≈ ${s.daily.toFixed(1)} шт./день — хватит на ${Math.floor(s.days)} дн. (порог ${set.minDaysStock}). Выручка за 28 дней ${mln(s.rev)}, тренд за 7 дней ${s.trend > 0 ? '+' : ''}${s.trend}%.`, why: 'Если товар закончится, потеряем продажи и позиции в выдаче. Срок производства и доставки — 3+ недели.', steps: [`Запросить у поставщика счёт на ${qty} шт.`, 'Согласовать оплату и дату отгрузки', 'Создать поставку на склад МП'], effect: Math.round(s.profit * 0.8), due: isoD(3), conf: 75, metric: `Остаток арт. ${s.art} ≥ ${set.minDaysStock} дней` });
+  if (ruleOk('stock')) S.filter(s => s.days < set.minDaysStock).sort((a, b) => a.days - b.days).forEach(s => {
+    const qty = Math.max(10, Math.round(s.daily * 45 / 10) * 10);
+    out.push({ id: 'stock-' + s.art, dir: 'Склад', urg: s.days < 7 ? 'high' : 'med', title: `Дозаказать арт. ${s.art} — ${qty} шт.`, sit: `«${s.name}»: остаток ${s.stock} шт., продаём ≈ ${s.daily.toFixed(1)} шт./день — хватит на ${daysTxt(s.days)} (порог ${set.minDaysStock}). Выручка за 28 дней ${mln(s.rev)}, тренд за 7 дней ${s.trend > 0 ? '+' : ''}${s.trend}%.`, why: 'Если товар закончится, потеряем продажи и позиции в выдаче. Срок производства и доставки — 3+ недели.', steps: [`Запросить у поставщика счёт на ${qty} шт.`, 'Согласовать оплату и дату отгрузки', 'Создать поставку на склад МП'], effect: Math.round(s.profit * 0.8), due: isoD(3), conf: 75, metric: `Остаток арт. ${s.art} ≥ ${set.minDaysStock} дней` });
   });
-  C.filter(c => c.drr > set.maxDrr).sort((a, b) => b.drr - a.drr).forEach(c => {
+  if (ruleOk('ads')) C.filter(c => c.drr > set.maxDrr).sort((a, b) => b.drr - a.drr).forEach(c => {
     const save_ = Math.round(c.spend * (1 - set.maxDrr / c.drr));
     out.push({ id: 'camp-' + c.name, dir: 'Реклама', urg: c.drr > 25 ? 'high' : 'med', title: `${c.drr > 25 ? 'Остановить' : 'Урезать'} кампанию «${c.name}»`, sit: `ДРР за месяц ${pct(c.drr)} при пороге ${set.maxDrr}%, за неделю ${pct(c.drrWeek)}. Расход ${mln(c.spend)}, заказов ${c.orders}, цена заказа ${rub(c.cpo)}, CTR ${c.ctr}%.`, why: 'Каждый рубль рекламы приносит меньше, чем допустимо. Освободившийся бюджет лучше направить в кампании с ДРР ниже порога.', steps: ['Снизить ставки на 30% и отключить слабые ключи', 'Через 3 дня проверить ДРР', 'Если ДРР не упал — остановить кампанию, бюджет перенести'], effect: save_, due: isoD(2), conf: 70, metric: `ДРР кампании ≤ ${set.maxDrr}%` });
   });
-  S.filter(s => s.profit < 0).forEach(s => out.push({ id: 'neg-' + s.art, dir: 'Цены', urg: 'high', title: `Поднять цену или убрать арт. ${s.art} из рекламы`, sit: `«${s.name}» в минус: прибыль ${rub(s.profit)} за 28 дней (маржа ${pct(s.margin)}). Себестоимость ${pct(s.cogs * 100, 0)}, комиссии и логистика ${pct(s.fees * 100, 0)}, реклама ${mln(s.ads)} (ДРР ${pct(s.drr)}).`, why: 'Продажи этого артикула уменьшают общую прибыль.', steps: ['Пересчитать цену с учётом комиссий и рекламы', 'Поднять цену на 8–10% и отключить рекламу', 'Через 2 недели оценить результат'], effect: Math.round(Math.abs(s.profit)), due: isoD(5), conf: 65, metric: `Маржа арт. ${s.art} > 0%` }));
-  if (pi.fc < pi.plan * 0.97) out.push({ id: 'plan', dir: 'Продажи', urg: 'med', title: 'Догнать план месяца', sit: `Факт ${mln(pi.fact)} (${pct(pi.p, 0)} плана). Прогноз на конец месяца ${mln(pi.fc)} — не хватает ${mln(pi.plan - pi.fc)}.`, why: 'При текущем темпе план не выполнится. Быстрее всего помогает акция на ходовых артикулах и рост оптовых сделок.', steps: ['Запустить акцию на топ-3 артикула', 'Дожать сделки в стадии «Счёт выставлен» в CRM', 'Проверить остатки топ-артикулов перед акцией'], effect: Math.round(pi.plan - pi.fc), due: isoD(7), conf: 55, metric: 'Прогноз выручки на конец месяца ≥ плана' });
+  if (ruleOk('skus')) S.filter(s => s.profit < 0 && s.rev > 0).forEach(s => out.push({ id: 'neg-' + s.art, dir: 'Цены', urg: 'high', title: `Поднять цену или убрать арт. ${s.art} из рекламы`, sit: `«${s.name}» в минус: прибыль ${rub(s.profit)} за 28 дней (маржа ${pct(s.margin)}). Себестоимость ${pct(s.cogs * 100, 0)}, комиссии и логистика ${pct(s.fees * 100, 0)}, реклама ${mln(s.ads)} (ДРР ${pct(s.drr)}).`, why: 'Продажи этого артикула уменьшают общую прибыль.', steps: ['Пересчитать цену с учётом комиссий и рекламы', 'Поднять цену на 8–10% и отключить рекламу', 'Через 2 недели оценить результат'], effect: Math.round(Math.abs(s.profit)), due: isoD(5), conf: 65, metric: `Маржа арт. ${s.art} > 0%` }));
+  if (ruleOk('plan') && pi.plan && pi.fc < pi.plan * 0.97) out.push({ id: 'plan', dir: 'Продажи', urg: 'med', title: 'Догнать план месяца', sit: `Факт ${mln(pi.fact)} (${pct(pi.p, 0)} плана). Прогноз на конец месяца ${mln(pi.fc)} — не хватает ${mln(pi.plan - pi.fc)}.`, why: 'При текущем темпе план не выполнится. Быстрее всего помогает акция на ходовых артикулах и рост оптовых сделок.', steps: ['Запустить акцию на топ-3 артикула', 'Дожать сделки в стадии «Счёт выставлен» в CRM', 'Проверить остатки топ-артикулов перед акцией'], effect: Math.round(pi.plan - pi.fc), due: isoD(7), conf: 55, metric: 'Прогноз выручки на конец месяца ≥ плана' });
   const toPay = docs.filter(d => d.type === 'Счёт' && d.status !== 'Обработан');
   if (toPay.length) out.push({ id: 'pay', dir: 'Документы', urg: 'med', title: `Оплатить счета: ${toPay.length} шт. на ${mln(toPay.reduce((a, d) => a + d.sum, 0))}`, sit: toPay.map(d => `${d.cp} — ${rub(d.sum)}`).join('; ') + '.', why: 'Просрочка по счетам портит отношения с поставщиками.', steps: toPay.map(d => `Оплатить счёт ${d.cp} (${rub(d.sum)})`), effect: 0, due: isoD(1), conf: 90, metric: 'Нет неоплаченных счетов старше 3 дней' });
-  const stuck = deals.filter(d => d.stage === 'Счёт выставлен');
-  if (stuck.length) out.push({ id: 'crm', dir: 'CRM', urg: 'low', title: `Дожать оплату по ${stuck.length} сделке «Счёт выставлен»`, sit: stuck.map(d => `${d.client} — ${rub(d.sum)}`).join('; ') + '.', why: 'Сделка на стадии счёта — самая близкая к деньгам.', steps: ['Позвонить клиенту и уточнить сроки оплаты', 'Отправить напоминание со ссылкой на счёт'], effect: stuck.reduce((a, d) => a + d.sum, 0), due: isoD(2), conf: 60, metric: 'Сделка перешла в «Оплачено»' });
+  const stuck = deals.filter(d => /сч[её]т/i.test(d.stage));
+  if (stuck.length) out.push({ id: 'crm', dir: 'CRM', urg: 'low', title: `Дожать оплату по сделкам на этапе счёта: ${stuck.length}`, sit: stuck.map(d => `${d.client} — ${rub(d.sum)}`).join('; ') + '.', why: 'Сделка на стадии счёта — самая близкая к деньгам.', steps: ['Позвонить клиенту и уточнить сроки оплаты', 'Отправить напоминание со ссылкой на счёт'], effect: stuck.reduce((a, d) => a + d.sum, 0), due: isoD(2), conf: 60, metric: 'Сделка перешла в «Оплачено»' });
   return out;
 }
 function allDecisions() {
@@ -458,17 +483,17 @@ function renderHead() {
   const h = new Date().getHours(), g = h < 5 ? 'Доброй ночи' : h < 12 ? 'Доброе утро' : h < 18 ? 'Добрый день' : 'Добрый вечер';
   $('#hello').textContent = `${g}, ${DATA.owner.name}!`;
   $('#hello2').textContent = new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
-  $('#srcs').innerHTML = DATA.headSources.map(id => { const s = DATA.sources.find(x => x.id === id); return `<span class="chip" title="${esc(s.name)}"><span class="dot ${s.status === 'ok' ? 'ok' : s.status === 'err' ? 'err' : ''}"></span>${s.short}</span>`; }).join('');
+  $('#srcs').innerHTML = DATA.headSources.map(id => { const s = DATA.sources.find(x => x.id === id), st = srcState(s); return `<span class="chip" title="${esc(s.name)}: ${st[0]}"><span class="dot ${st[2]}"></span>${s.short}</span>`; }).join('');
   const t = new Date(lastSync);
-  $('#sync').innerHTML = `Синхронизация: ${t.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} ${DATA.demo ? '(демо)' : ''} <button data-act="sync">↻ Обновить</button>`;
+  $('#sync').innerHTML = `Синхронизация: ${t.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} ${DATA.live ? '' : '(демо)'}${syncing ? ' · идёт…' : ''} <button data-act="sync" ${syncing ? 'disabled' : ''}>↻ Обновить</button>`;
 }
 
 /* ===================== страницы ===================== */
-const kcard = (lbl, val, delta, sp, color, extra = '') => `<div class="card kpi"><div class="lbl">${lbl} ${demoTag}</div><div class="val">${val}</div><div class="dl ${delta >= 0 ? 'up' : 'dn'}">${delta >= 0 ? '▲' : '▼'} ${pct(Math.abs(delta))} <span class="mut" style="font-weight:400">к прошлому месяцу</span></div>${spark(sp, color)}</div>`;
+const kcard = (lbl, val, k, color, block) => `<div class="card kpi"><div class="lbl">${lbl} ${dm(block)}</div><div class="val">${val}</div><div class="dl ${k.d >= 0 ? 'up' : 'dn'}">${k.d >= 0 ? '▲' : '▼'} ${k.unit === 'pp' ? Math.abs(k.d).toLocaleString('ru-RU') + ' п.п.' : pct(Math.abs(k.d))} <span class="mut" style="font-weight:400">${block === 'cash' ? 'за 30 дней' : 'к прошлому месяцу'}</span></div>${spark(k.spark, color)}</div>`;
+const kpiRow = () => { const K = DATA.kpi; return `${kcard('Выручка (месяц)', mln(K.revenue.v), K.revenue, '#4f8cff', 'revenue')}${kcard('Чистая прибыль', mln(K.profit.v), K.profit, '#9b5cff', 'profit')}${kcard('Маржа', pct(K.margin.v), K.margin, '#2ee59d', 'margin')}${kcard('Деньги на счетах', mln(K.cash.v), K.cash, '#4f8cff', 'cash')}`; };
 
 function pHome() {
-  const pi = planInfo(), K = DATA.kpiDelta, set = DATA.settings, tc = taskCounts();
-  const rev = pi.fact, prof = rev * set.profitRate;
+  const pi = planInfo(), set = DATA.settings, tc = taskCounts();
   const dec = allDecisions().filter(d => d.st.status === 'new').slice(0, 3);
   const recvTotal = DATA.receivables.reduce((a, r) => a + r.sum, 0);
   const SK = SKUS(), low = SK.filter(s => s.days < set.minDaysStock);
@@ -483,53 +508,50 @@ function pHome() {
   return `
   <div class="cols"><div class="grid">
     <div class="grid g4">
-      ${kcard('Выручка (месяц)', mln(rev), K.revenue, DATA.kpiSpark.revenue, '#4f8cff')}
-      ${kcard('Чистая прибыль', mln(prof), K.profit, DATA.kpiSpark.profit, '#9b5cff')}
-      ${kcard('Маржа', pct(set.margin), K.margin, DATA.kpiSpark.margin, '#2ee59d')}
-      ${kcard('Деньги на счетах', mln(cashNow()), K.cash, DATA.kpiSpark.cash, '#4f8cff')}
+      ${kpiRow()}
     </div>
-    <div class="card"><h3>План месяца ${demoTag}<span class="mut" style="margin-left:auto;font-weight:400">${pi.day} из ${pi.dim} дней</span></h3>
+    <div class="card"><h3>План месяца ${dm('plan')}<span class="mut" style="margin-left:auto;font-weight:400">${pi.day} из ${pi.dim} дней</span></h3>
       <div class="row sp" style="margin-bottom:8px"><span><b style="font-size:20px">${mln(pi.fact)}</b> <span class="mut">из ${mln(pi.plan)}</span></span><b>${pct(pi.p, 0)}</b></div>
       <div class="bar"><i style="width:${pi.p}%"></i></div>
-      <p style="margin-top:10px" class="${pi.fcp >= 97 ? 'up' : 'warn'}">Прогноз на конец месяца: ${mln(pi.fc)} (${pct(pi.fcp, 0)} плана) ${pi.fcp >= 97 ? '— план в зоне достижения' : '— отставание ' + mln(pi.plan - pi.fc)}</p></div>
-    <div class="card"><h3>Прогноз денег на 30 дней ${demoTag}<span class="more" data-go="finance">Подробнее →</span></h3>${forecastChart()}</div>
+      ${pi.plan ? `<p style="margin-top:10px" class="${pi.fcp >= 97 ? 'up' : 'warn'}">Прогноз на конец месяца: ${mln(pi.fc)} (${pct(pi.fcp, 0)} плана) ${pi.fcp >= 97 ? '— план в зоне достижения' : '— отставание ' + mln(pi.plan - pi.fc)}</p>` : `<p style="margin-top:10px" class="warn">Прогноз на конец месяца: ${mln(pi.fc)}. План не задан — впишите monthPlan в settings.json.</p>`}</div>
+    <div class="card"><h3>Прогноз денег на 30 дней ${dm('forecast')}<span class="more" data-go="finance">Подробнее →</span></h3>${forecastChart()}</div>
     <div class="grid g2">
-      <div class="card"><h3>Маржинальность по каналам ${demoTag}<span class="more" data-go="mp">Подробнее →</span></h3>
+      <div class="card"><h3>Маржинальность по каналам ${dm('channels')}<span class="more" data-go="mp">Подробнее →</span></h3>
         ${DATA.channels.map(c => `<div style="margin-bottom:12px"><div class="row sp"><span><span class="dot" style="background:${c.color};box-shadow:0 0 8px ${c.color};display:inline-block;margin-right:6px"></span>${c.name} <span class="mut">· ${c.share}% выручки</span></span><b>${pct(c.margin)}</b></div>
         <div class="bar" style="height:7px;margin:6px 0 3px"><i style="width:${Math.min(100, c.margin * 3)}%;background:${c.color}"></i></div>
         <div class="s mut" style="font-size:12px">ДРР <b class="${c.drr > set.maxDrr ? 'dn' : 'up'}">${pct(c.drr)}</b> · порог ${set.maxDrr}%</div></div>`).join('')}</div>
-      <div class="card"><h3>Налоги и платежи ${demoTag}<span class="more" data-go="taxes">Все →</span></h3><div class="list">
-        ${DATA.taxes.map(t => `<div><div class="g"><div class="t">${t.name}</div><div class="s">${fshort(addD(t.in))} · через ${t.in} дн.</div></div><b>${rub(t.amount)}</b></div>`).join('')}</div></div>
+      <div class="card"><h3>Налоги и платежи ${dm('taxes')}<span class="more" data-go="taxes">Все →</span></h3><div class="list">
+        ${DATA.taxes.length ? '' : '<p class="mut">График платежей пуст — заполните payments в settings.json.</p>'}${DATA.taxes.slice(0, 5).map(t => `<div><div class="g"><div class="t">${t.name}</div><div class="s">${fshort(addD(t.in))} · через ${t.in} дн.</div></div><b>${rub(t.amount)}</b></div>`).join('')}</div></div>
     </div>
     <div class="grid g3">
-      <div class="card"><h3>Дебиторка ${demoTag}</h3><div class="val" style="font-size:20px;font-weight:700;margin-bottom:8px">${mln(recvTotal)}</div><div class="list">
+      <div class="card"><h3>Дебиторка ${dm('receivables')}</h3><div class="val" style="font-size:20px;font-weight:700;margin-bottom:8px">${mln(recvTotal)}</div><div class="list">
         ${DATA.receivables.map(r => `<div><div class="g"><div class="t">${r.who}</div><div class="s ${r.in < 0 ? 'dn' : ''}">${r.in < 0 ? 'просрочено ' + (-r.in) + ' дн.' : 'через ' + r.in + ' дн.'}</div></div><b>${mln(r.sum)}</b></div>`).join('')}</div></div>
-      <div class="card"><h3>Продажи ${demoTag}<span class="more" data-go="sales">→</span></h3>
-        <div class="bars">${DATA.sales.byDay.map(v => `<i style="height:${v / 0.7}%"></i>`).join('')}</div>
+      <div class="card"><h3>Продажи ${dm('sales')}<span class="more" data-go="sales">→</span></h3>
+        ${barsHtml(DATA.sales.byDay)}
         <div class="row sp" style="margin-top:10px"><span class="mut">Заказов за 14 дн.</span><b>${DATA.sales.orders}</b></div>
         <div class="row sp"><span class="mut">Средний чек</span><b>${rub(DATA.sales.avgCheck)}</b></div></div>
-      <div class="card"><h3>Склад ${demoTag}<span class="more" data-go="stock">→</span></h3>
+      <div class="card"><h3>Склад ${dm('stock')}<span class="more" data-go="stock">→</span></h3>
         <p style="margin-bottom:8px">Артикулов: <b>${SK.length}</b> · заканчиваются: <b class="${low.length ? 'dn' : 'up'}">${low.length}</b></p>
-        <div class="list">${SK.slice().sort((a, b) => a.days - b.days).slice(0, 3).map(s => `<div><div class="g"><div class="t">${s.art}</div><div class="s">${s.name}</div></div><span class="tag ${s.days < 7 ? 't-red' : s.days < 14 ? 't-amb' : 't-grn'}">${Math.floor(s.days)} дн.</span></div>`).join('')}</div></div>
+        <div class="list">${SK.slice().sort((a, b) => a.days - b.days).slice(0, 3).map(s => `<div><div class="g"><div class="t">${s.art}</div><div class="s">${s.name}</div></div><span class="tag ${s.days < 7 ? 't-red' : s.days < set.minDaysStock ? 't-amb' : 't-grn'}">${daysTxt(s.days)}</span></div>`).join('')}</div></div>
     </div>
     <div class="grid g3">
-      <div class="card"><h3>Поставки ${demoTag}<span class="more" data-go="supplies">→</span></h3><div class="list">
+      <div class="card"><h3>Поставки ${dm('supplies')}<span class="more" data-go="supplies">→</span></h3><div class="list">
         ${DATA.supplies.map(s => `<div><div class="g"><div class="t">${s.name}</div><div class="s">${s.qty} шт.</div></div><span class="tag t-blu">${s.status}</span></div>`).join('')}</div></div>
-      <div class="card"><h3>Воронка CRM<span class="more" data-go="crm">→</span></h3>
+      <div class="card"><h3>Воронка CRM ${dm('crm')}<span class="more" data-go="crm">→</span></h3>
         ${stageSum.map(s => `<div style="margin-bottom:8px"><div class="row sp" style="font-size:12.5px"><span>${s.st}</span><span class="mut">${s.n} · ${mln(s.sum)}</span></div><div class="bar" style="height:6px;margin-top:3px"><i style="width:${s.n / maxN * 100}%"></i></div></div>`).join('')}</div>
-      <div class="card"><h3>Внешний трафик ${demoTag}</h3><div class="list">
+      <div class="card"><h3>Внешний трафик ${dm('traffic')}</h3><div class="list">
         ${DATA.traffic.map(t => `<div><div class="g"><div class="t">${t.name}</div><div class="s">${t.visits.toLocaleString('ru-RU')} визитов</div></div><b>${t.conv}%</b></div>`).join('')}</div></div>
     </div>
   </div>
   <aside class="grid">
-    <div class="card"><h3>✨ ИИ-инсайты ${demoTag}<span class="more" data-go="decisions">Все решения →</span></h3>
+    <div class="card"><h3>✨ ИИ-инсайты <span class="tag t-gry">правила</span><span class="more" data-go="decisions">Все решения →</span></h3>
       ${dec.length ? dec.map(d => `<div class="ins ${d.urg[0]}"><b>${esc(d.title)}</b><p>${esc(d.sit.slice(0, 130))}…</p><div class="row"><button class="btn sm" data-go="decisions">Открыть</button><span class="tag t-gry">${d.dir}</span></div></div>`).join('') : '<p class="mut">Новых решений нет.</p>'}</div>
     <div class="card"><h3>Требуют внимания</h3><div class="list">
       ${attention.length ? attention.map(a => `<div style="cursor:pointer" data-go="${a[0]}"><span class="dot ${a[1] === 'dn' ? 'err' : ''}"></span><div class="g t ${a[1]}">${a[2]}</div>→</div>`).join('') : '<p class="mut">Всё спокойно.</p>'}</div></div>
     <div class="card"><h3>Быстрые действия</h3><div class="qa">
       <button data-act="newTask">＋ Задача</button><button data-act="newDeal">＋ Сделка</button>
       <button data-act="upload">⬆ Документ</button><button data-act="ai">✨ Спросить ИИ</button></div></div>
-    <div class="card"><h3>Последние документы<span class="more" data-go="docs">Все →</span></h3><div class="list">
+    <div class="card"><h3>Последние документы ${dm('docs')}<span class="more" data-go="docs">Все →</span></h3><div class="list">
       ${docs.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 4).map(d => `<div><div class="g"><div class="t">${esc(d.name)}</div><div class="s">${d.source} · ${fdate(d.date)}</div></div>${docTag(d.status)}</div>`).join('')}</div></div>
   </aside></div>`;
 }
@@ -580,10 +602,10 @@ function taskModal(id) {
 
 /* ---- CRM ---- */
 function pCrm() {
-  const paid = deals.filter(d => d.stage === 'Оплачено'), base = paid.length ? paid : deals;
+  const paid = deals.filter(d => isWon(d)), base = paid.length ? paid : deals;
   const avg = base.length ? base.reduce((a, d) => a + d.sum, 0) / base.length : 0, conv = deals.length ? paid.length / deals.length * 100 : 0;
-  return `<h2 class="pt">CRM</h2><p class="sub">Воронка сделок ${demoTag}. Перетаскивайте сделки по этапам; клик по карточке — редактирование.</p>
-  <div class="filters"><div class="stat">Сделок <b>${deals.length}</b></div><div class="stat">В воронке <b>${mln(deals.filter(d => d.stage !== 'Оплачено').reduce((a, d) => a + d.sum, 0))}</b></div>
+  return `<h2 class="pt">CRM</h2><p class="sub">Воронка сделок ${dm('crm')}${crmLive ? ' — изменения записываются в CRM' : ''}. Перетаскивайте сделки по этапам; клик по карточке — редактирование.</p>
+  <div class="filters"><div class="stat">Сделок <b>${deals.length}</b></div><div class="stat">В воронке <b>${mln(deals.filter(d => !isWon(d)).reduce((a, d) => a + d.sum, 0))}</b></div>
   <div class="stat">Конверсия в оплату <b>${pct(conv, 0)}</b></div><div class="stat">Средний чек <b>${mln(avg)}</b></div>
   <button class="btn pri" data-act="newDeal" style="margin-left:auto">＋ Новая сделка</button></div>
   <div class="board" style="--n:${DATA.stages.length}">${DATA.stages.map(st => { const it = deals.filter(d => d.stage === st); return `<div class="colm" data-col="${st}" data-board="deals"><h4>${st}<span class="chip">${it.length} · ${mln(it.reduce((a, d) => a + d.sum, 0))}</span></h4>
@@ -602,9 +624,10 @@ function dealModal(id) {
     () => {
       const title = $('#m_title').value.trim(); if (!title) { toast('Введите название'); return false; }
       const v = { title, client: $('#m_client').value, sum: +$('#m_sum').value || 0, stage: $('#m_stage').value, who: $('#m_who').value, note: $('#m_note').value };
+      if (crmLive) { saveDealCrm(id, v); return; }
       if (id) Object.assign(deals.find(x => x.id === id), v); else deals.push({ id: uid(), ...v });
       saveAll(); render();
-    }, id ? () => { deals = deals.filter(x => x.id !== id); saveAll(); render(); } : null);
+    }, id && !crmLive ? () => { deals = deals.filter(x => x.id !== id); saveAll(); render(); } : null);
 }
 
 /* ---- Документы ---- */
@@ -620,11 +643,27 @@ function pDocs() {
 }
 
 /* ---- Интеграции ---- */
+// Состояние источника для шапки и «Интеграций»: [текст, класс тега, класс точки, подробности[]]
+function srcState(s) {
+  if (!DATA.live) return ['Демо-режим (без сервера)', 't-amb', '', []];
+  if (!(s.keys || []).length) return ['Подключается на этапе 3', 't-gry', '', []];
+  const st = (srv?.sources || []).filter(x => s.keys.includes(x.key));
+  const on = st.filter(x => x.enabled), errs = st.filter(x => x.error);
+  const det = st.filter(x => x.enabled || x.error).map(x => ({ name: x.name, ok: x.ok, error: x.error, at: x.lastOkAt }));
+  if (errs.length) return [on.some(x => x.ok) ? 'Частично: есть ошибки' : 'Ошибка подключения', 't-red', 'err', det];
+  if (on.length && on.every(x => x.ok)) return ['Подключено', 't-grn', 'ok', det];
+  if (on.length) return ['Ждёт первой синхронизации', 't-blu', '', det];
+  return ['Не подключено · демо', 't-amb', '', det];
+}
+const fdt = s => (s ? new Date(s).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
 function pInteg() {
-  const lbl = { ok: ['Подключено', 't-grn'], demo: ['Не подключено · демо', 't-amb'], err: ['Ошибка', 't-red'] };
-  return `<h2 class="pt">Интеграции</h2><p class="sub">Каждый источник подключается отдельно. Пока ключей нет — блоки на дашборде показывают демо-данные с пометкой.</p>
-  <div class="grid g3">${DATA.sources.map(s => `<div class="card integ"><div class="row"><div class="logo2">${s.short.slice(0, 2)}</div><div class="g"><b>${s.name}</b><div class="mut" style="font-size:12px">${s.desc}</div></div></div>
-  <div><span class="tag ${lbl[s.status][1]}">${lbl[s.status][0]}</span></div><button class="btn sm" data-act="connect" data-id="${s.id}">Как подключить</button></div>`).join('')}</div>`;
+  return `<h2 class="pt">Интеграции</h2><p class="sub">Каждый источник подключается отдельно: ключ вписывается в .env на сервере. Пока ключа нет — блоки дашборда показывают демо-данные с пометкой «демо».</p>
+  ${DATA.live ? '' : '<div class="card" style="margin-bottom:16px;border-color:rgba(255,176,32,.4)"><b class="warn">Страница открыта без сервера — работает демо-режим.</b><p class="mut" style="margin-top:4px">Чтобы подключить реальные данные, запустите сервер: <code>npm start</code> и откройте http://localhost:3000.</p></div>'}
+  <div class="grid g3">${DATA.sources.map(s => { const [t, cls, , det] = srcState(s); return `<div class="card integ"><div class="row"><div class="logo2">${s.short.slice(0, 2)}</div><div class="g"><b>${s.name}</b><div class="mut" style="font-size:12px">${s.desc}</div></div></div>
+  <div><span class="tag ${cls}">${t}</span></div>
+  ${det.map(d => `<div style="font-size:12.5px">${det.length > 1 ? `<b>${esc(d.name)}:</b> ` : ''}${d.error ? `<span class="dn">${esc(d.error)}</span>` : d.ok ? `<span class="up">данные от ${fdt(d.at)}</span>` : '<span class="mut">ещё не загружено</span>'}${d.error && d.at ? ` <span class="mut">(последние данные от ${fdt(d.at)})</span>` : ''}</div>`).join('')}
+  <button class="btn sm" data-act="connect" data-id="${s.id}">Как подключить</button></div>`; }).join('')}</div>
+  ${DATA.notes.length ? `<div class="card" style="margin-top:16px"><h3>Как посчитаны цифры</h3><ul style="margin-left:18px;color:var(--mut)">${DATA.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul></div>` : ''}`;
 }
 
 /* ---- Центр решений ---- */
@@ -633,7 +672,7 @@ function pDecisions() {
   const all = allDecisions(), tabs = [['new', 'Новые'], ['progress', 'В работе'], ['postponed', 'Отложены'], ['done', 'Выполнены'], ['rejected', 'Отклонены']];
   const list = all.filter(d => d.st.status === decTab);
   const total = all.filter(d => d.st.status === 'new').reduce((a, d) => a + d.effect, 0);
-  return `<h2 class="pt">Центр решений</h2><p class="sub">Решения, которые нужно принять сегодня. Сейчас работают встроенные правила; с ключом Claude API список составит ИИ. ${demoTag}</p>
+  return `<h2 class="pt">Центр решений</h2><p class="sub">Решения, которые нужно принять сегодня. Сейчас работают встроенные правила; с ключом Claude API список составит ИИ.${DATA.live ? ' Правила строятся только по подключённым источникам.' : ' ' + demoTag}</p>
   <div class="filters"><div class="stat">Потенциальный эффект новых <b class="up">${mln(total)}/мес</b></div><button class="btn pri" data-act="recalc" style="margin-left:auto">↻ Пересчитать сейчас</button></div>
   <div class="tabs">${tabs.map(([k, n]) => `<button class="${decTab === k ? 'on' : ''}" data-act="dtab" data-t="${k}">${n} (${all.filter(d => d.st.status === k).length})</button>`).join('')}</div>
   <div class="grid">${list.map(d => `<div class="card dec"><h3><span class="tag ${URG[d.urg][1]}">${URG[d.urg][0]}</span><span class="tag t-gry">${d.dir}</span></h3>
@@ -655,22 +694,30 @@ function pDecisions() {
 /* ---- Аналитика / остальные разделы на тех же данных ---- */
 const skuTable = (rows) => `<div class="card tw"><table class="tbl"><thead><tr><th>Артикул</th><th>Канал</th><th class="num">Выручка 28д</th><th class="num">Тренд 7д</th><th class="num">Продано</th><th class="num">Остаток</th><th class="num">Хватит на</th><th class="num">Реклама</th><th class="num">ДРР</th><th class="num">Прибыль</th><th class="num">Маржа</th></tr></thead><tbody>
 ${rows.map(s => `<tr><td><b>${s.art}</b><div class="mut" style="font-size:12px">${s.name}</div></td><td>${s.ch}</td><td class="num">${rub(s.rev)}</td><td class="num ${s.trend >= 0 ? 'up' : 'dn'}">${s.trend >= 0 ? '▲' : '▼'} ${pct(Math.abs(s.trend))}</td><td class="num">${s.sold}</td><td class="num">${s.stock}</td>
-<td class="num"><span class="tag ${s.days < 7 ? 't-red' : s.days < 14 ? 't-amb' : 't-grn'}">${Math.floor(s.days)} дн.</span></td><td class="num">${rub(s.ads)}</td><td class="num ${s.drr > DATA.settings.maxDrr ? 'dn' : ''}">${pct(s.drr)}</td><td class="num ${s.profit < 0 ? 'dn' : ''}">${rub(s.profit)}</td><td class="num ${s.margin < 0 ? 'dn' : ''}">${pct(s.margin)}</td></tr>`).join('')}</tbody></table></div>`;
+<td class="num"><span class="tag ${s.days < 7 ? 't-red' : s.days < DATA.settings.minDaysStock ? 't-amb' : 't-grn'}">${daysTxt(s.days)}</span></td><td class="num">${rub(s.ads)}</td><td class="num ${s.drr > DATA.settings.maxDrr ? 'dn' : ''}">${pct(s.drr)}</td><td class="num ${s.profit < 0 ? 'dn' : ''}">${s.est ? '≈' : ''}${rub(s.profit)}</td><td class="num ${s.margin < 0 ? 'dn' : ''}">${pct(s.margin)}</td></tr>`).join('')}</tbody></table></div>`;
 const campTable = rows => `<div class="card tw"><table class="tbl"><thead><tr><th>Кампания</th><th class="num">Расход</th><th class="num">Показы</th><th class="num">CTR</th><th class="num">Заказы</th><th class="num">Цена заказа</th><th class="num">ДРР месяц</th><th class="num">ДРР неделя</th></tr></thead><tbody>
 ${rows.map(c => `<tr><td>${c.name}</td><td class="num">${rub(c.spend)}</td><td class="num">${c.impr.toLocaleString('ru-RU')}</td><td class="num">${c.ctr}%</td><td class="num">${c.orders}</td><td class="num">${rub(c.cpo)}</td><td class="num ${c.drr > DATA.settings.maxDrr ? 'dn' : 'up'}">${pct(c.drr)}</td><td class="num ${c.drrWeek > DATA.settings.maxDrr ? 'dn' : 'up'}">${pct(c.drrWeek)}</td></tr>`).join('')}</tbody></table></div>`;
-const head = (t, s) => `<h2 class="pt">${t} ${demoTag}</h2><p class="sub">${s}</p>`;
-const pAnalytics = () => head('Аналитика', 'Артикулы и рекламные кампании на тех же данных, что и Центр решений.') + '<h3 style="margin:8px 0">Артикулы</h3>' + skuTable(SKUS()) + '<h3 style="margin:18px 0 8px">Рекламные кампании</h3>' + campTable(CAMPS());
-const pAds = () => { const c = CAMPS(), sp = c.reduce((a, x) => a + x.spend, 0), rv = c.reduce((a, x) => a + x.rev, 0); return head('Реклама', `Расход ${mln(sp)} · общий ДРР ${pct(sp / rv * 100)} · порог ${DATA.settings.maxDrr}%`) + campTable(c); };
-const pStock = () => head('Склад', 'Остатки и сколько дней хватит каждого артикула.') + skuTable(SKUS().sort((a, b) => a.days - b.days));
+const head = (t, s, b) => `<h2 class="pt">${t} ${b ? dm(b) : ''}</h2><p class="sub">${s}</p>`;
+const estNote = () => DATA.skus.some(s => s.est) ? '<p class="mut" style="font-size:12px;margin-top:8px">≈ — оценка: Ozon отдаёт выплату только итогом за месяц, поэтому прибыль по артикулам Ozon посчитана по доле выплаты из финансового отчёта.</p>' : '';
+const pAnalytics = () => head('Аналитика', 'Артикулы и рекламные кампании на тех же данных, что и Центр решений. Артикулы — за 28 дней, кампании — за 30 дней.') + `<h3 style="margin:8px 0">Артикулы ${dm('skus')}</h3>` + skuTable(SKUS()) + estNote() + `<h3 style="margin:18px 0 8px">Рекламные кампании ${dm('ads')}</h3>` + campTable(CAMPS());
+const pAds = () => { const c = CAMPS(), sp = c.reduce((a, x) => a + x.spend, 0), rv = c.reduce((a, x) => a + x.rev, 0); return head('Реклама', `Расход за 30 дней ${mln(sp)} · общий ДРР ${rv ? pct(sp / rv * 100) : '—'} · порог ${DATA.settings.maxDrr}%`, 'ads') + (c.length ? campTable(c) : '<div class="card empty">Кампаний за 30 дней нет</div>'); };
+const pStock = () => head('Склад', `Остатки и на сколько дней хватит каждого артикула (по продажам за 28 дней). Порог дозаказа — ${DATA.settings.minDaysStock} дн.`, 'stock') + skuTable(SKUS().sort((a, b) => a.days - b.days)) + estNote();
 function pFinance() {
-  const pi = planInfo(), rev = pi.fact, prof = rev * DATA.settings.profitRate, ev = DATA.cashEvents;
-  return head('Финансы', 'Прибыль, деньги и кассовый прогноз.') + `<div class="grid g4" style="margin-bottom:16px">${kcard('Выручка', mln(rev), DATA.kpiDelta.revenue, DATA.kpiSpark.revenue, '#4f8cff')}${kcard('Чистая прибыль', mln(prof), DATA.kpiDelta.profit, DATA.kpiSpark.profit, '#9b5cff')}${kcard('Маржа', pct(DATA.settings.margin), DATA.kpiDelta.margin, DATA.kpiSpark.margin, '#2ee59d')}${kcard('Деньги на счетах', mln(cashNow()), DATA.kpiDelta.cash, DATA.kpiSpark.cash, '#4f8cff')}</div>
-  <div class="grid g2"><div class="card"><h3>Прогноз денег на 30 дней</h3>${forecastChart()}</div><div class="card"><h3>Крупные платежи</h3><div class="list">${ev.map(e => `<div><div class="g"><div class="t">${e.name}</div><div class="s">${fshort(addD(e.i))}</div></div><b>−${rub(e.amt)}</b></div>`).join('')}</div></div></div>`;
+  const ev = DATA.cashEvents, P = DATA.pnl, A = DATA.accounts;
+  return head('Финансы', 'Прибыль, деньги и кассовый прогноз.') + `<div class="grid g4" style="margin-bottom:16px">${kpiRow()}</div>
+  <div class="grid g2" style="margin-bottom:16px"><div class="card"><h3>Прогноз денег на 30 дней ${dm('forecast')}</h3>${forecastChart()}</div>
+  <div class="card"><h3>Платежи по графику ${dm('taxes')}</h3><div class="list">${ev.length ? ev.map(e => `<div><div class="g"><div class="t">${esc(e.name)}</div><div class="s">${fshort(addD(e.i))}</div></div><b>−${rub(e.amt)}</b></div>`).join('') : '<p class="mut">Нет платежей на 30 дней</p>'}</div></div></div>
+  <div class="grid g2">
+  ${P ? `<div class="card"><h3>Как посчитана прибыль (с начала месяца)</h3><div class="list">
+    <div><div class="g">Выручка</div><b>${rub(P.revenue)}</b></div><div><div class="g">Выплаты маркетплейсов</div><b>${rub(P.payout)}</b></div>
+    <div><div class="g">− Себестоимость</div><b>${rub(P.cogs)}</b></div><div><div class="g">− Реклама</div><b>${rub(P.ads)}</b></div>
+    <div><div class="g">− Расходы (постоянные + график, пропорционально дням)</div><b>${rub(P.exp)}</b></div><div><div class="g"><b>= Чистая прибыль</b></div><b class="${P.profit < 0 ? 'dn' : 'up'}">${rub(P.profit)}</b></div></div></div>` : `<div class="card"><h3>Как посчитана прибыль ${demoTag}</h3><p class="mut">Прибыль = выплаты маркетплейсов − себестоимость − реклама − расходы. Подключите WB или Ozon, чтобы увидеть расчёт.</p></div>`}
+  <div class="card"><h3>Счета ${dm('cash')}</h3><div class="list">${A && A.length ? A.map(a => `<div><div class="g"><div class="t">${esc(a.bank)}</div><div class="s">${esc(a.name)}</div></div><b>${rub(a.balance)}</b></div>`).join('') : '<p class="mut">Банк не подключён — остаток и прогноз показаны на демо-данных.</p>'}</div></div></div>`;
 }
-function pSales() { const S = DATA.sales; return head('Продажи', 'Динамика заказов за 14 дней.') + `<div class="grid g3" style="margin-bottom:16px"><div class="card kpi"><div class="lbl">Заказов</div><div class="val">${S.orders}</div><div class="dl up">▲ ${S.ordersDelta}%</div></div><div class="card kpi"><div class="lbl">Средний чек</div><div class="val">${rub(S.avgCheck)}</div></div><div class="card kpi"><div class="lbl">Возвраты</div><div class="val">${S.returns}%</div></div></div><div class="card"><h3>Заказы по дням</h3><div class="bars" style="height:180px">${S.byDay.map(v => `<i style="height:${v / 0.7}%" title="${v}"></i>`).join('')}</div></div>`; }
-const pMp = () => head('Маркетплейсы', 'Сравнение каналов продаж.') + `<div class="grid g3">${DATA.channels.map(c => `<div class="card"><h3><span class="dot" style="background:${c.color}"></span>${c.name}</h3><p class="mut">Доля выручки</p><div class="val" style="font-size:22px;font-weight:700">${c.share}%</div><div class="bar" style="margin:8px 0"><i style="width:${c.share}%;background:${c.color}"></i></div><div class="row sp"><span class="mut">Маржа</span><b>${pct(c.margin)}</b></div><div class="row sp"><span class="mut">ДРР</span><b class="${c.drr > DATA.settings.maxDrr ? 'dn' : 'up'}">${pct(c.drr)}</b></div></div>`).join('')}</div>`;
-const pSupplies = () => head('Поставки', 'Что едет на склады маркетплейсов.') + `<div class="card"><div class="list">${DATA.supplies.map(s => `<div><div class="g"><div class="t">${s.name}</div><div class="s">${s.qty} шт. · ${s.eta ? 'ожидается через ' + s.eta + ' дн.' : 'сегодня'}</div></div><span class="tag t-blu">${s.status}</span></div>`).join('')}</div></div>`;
-const pTaxes = () => head('Налоги', 'График обязательных платежей (из settings.json на этапе 2).') + `<div class="card"><div class="list">${DATA.taxes.map(t => `<div><div class="g"><div class="t">${t.name}</div><div class="s">${fdate(isoD(t.in))} · через ${t.in} дн.</div></div><b>${rub(t.amount)}</b></div>`).join('')}</div><p class="row sp" style="margin-top:12px"><span class="mut">Итого ближайшие платежи</span><b>${rub(DATA.taxes.reduce((a, t) => a + t.amount, 0))}</b></p></div>`;
+function pSales() { const S = DATA.sales; return head('Продажи', 'Заказы и выручка за 14 дней.', 'sales') + `<div class="grid g3" style="margin-bottom:16px"><div class="card kpi"><div class="lbl">Заказов за 14 дней</div><div class="val">${S.orders.toLocaleString('ru-RU')}</div><div class="dl ${S.ordersDelta >= 0 ? 'up' : 'dn'}">${S.ordersDelta >= 0 ? '▲' : '▼'} ${pct(Math.abs(S.ordersDelta))} к прошлым 14 дням</div></div><div class="card kpi"><div class="lbl">Средний чек</div><div class="val">${rub(S.avgCheck)}</div></div><div class="card kpi"><div class="lbl">Возвраты (WB, 28 дней)</div><div class="val">${S.returns == null ? '—' : pct(S.returns)}</div></div></div><div class="card"><h3>Выручка по дням</h3>${barsHtml(S.byDay, 180)}</div>`; }
+const pMp = () => head('Маркетплейсы', 'Сравнение каналов за 28 дней. Маржа канала — до постоянных расходов.', 'channels') + `<div class="grid g3">${DATA.channels.map(c => `<div class="card"><h3><span class="dot" style="background:${c.color}"></span>${c.name}${c.estimated && isLive('channels') ? ' <span class="tag t-gry">≈ оценка</span>' : ''}</h3><p class="mut">Доля выручки</p><div class="val" style="font-size:22px;font-weight:700">${c.share}%</div><div class="bar" style="margin:8px 0"><i style="width:${c.share}%;background:${c.color}"></i></div><div class="row sp"><span class="mut">Маржа</span><b>${pct(c.margin)}</b></div><div class="row sp"><span class="mut">ДРР</span><b class="${c.drr > DATA.settings.maxDrr ? 'dn' : 'up'}">${isLive('channels') && c.adsLive === false ? 'реклама не подключена' : pct(c.drr)}</b></div></div>`).join('')}</div>`;
+const pSupplies = () => head('Поставки', 'Что едет на склады маркетплейсов. Источник поставок подключается позже.', 'supplies') + `<div class="card"><div class="list">${DATA.supplies.map(s => `<div><div class="g"><div class="t">${s.name}</div><div class="s">${s.qty} шт. · ${s.eta ? 'ожидается через ' + s.eta + ' дн.' : 'сегодня'}</div></div><span class="tag t-blu">${s.status}</span></div>`).join('')}</div></div>`;
+const pTaxes = () => head('Налоги', 'График обязательных платежей на 30 дней — из settings.json (payments).', 'taxes') + `<div class="card"><div class="list">${DATA.taxes.map(t => `<div><div class="g"><div class="t">${esc(t.name)}</div><div class="s">${fdate(isoD(t.in))} · через ${t.in} дн.</div></div><b>${rub(t.amount)}</b></div>`).join('') || '<p class="mut">Платежей нет — заполните payments в settings.json.</p>'}</div><p class="row sp" style="margin-top:12px"><span class="mut">Итого за 30 дней</span><b>${rub(DATA.taxes.reduce((a, t) => a + t.amount, 0))}</b></p></div>`;
 
 const PAGES = { home: pHome, decisions: pDecisions, analytics: pAnalytics, finance: pFinance, sales: pSales, mp: pMp, ads: pAds, crm: pCrm, stock: pStock, supplies: pSupplies, taxes: pTaxes, docs: pDocs, integ: pInteg, tasks: pTasks };
 function render() { renderNav(); renderHead(); $('#view').innerHTML = PAGES[page](); }
@@ -690,14 +737,14 @@ const closeModal = () => $('#overlay').innerHTML = '';
 const aiChips = ['Как выручка?', 'Что со складом?', 'Какие задачи горят?', 'Где реклама неэффективна?', 'Что с деньгами?'];
 function aiReply(q) {
   q = q.toLowerCase(); const pi = planInfo(), S = SKUS(), C = CAMPS(), tc = taskCounts(), set = DATA.settings;
-  const note = '\n\n(Данные демонстрационные — реальные подключаются через «Интеграции».)';
-  if (/выруч|план|продаж/.test(q)) return `Выручка за месяц: ${mln(pi.fact)} — ${pct(pi.p, 0)} плана ${mln(pi.plan)}. Прогноз на конец месяца: ${mln(pi.fc)}${pi.fc < pi.plan ? ', до плана не хватает ' + mln(pi.plan - pi.fc) : ''}. Рост к прошлому месяцу: +${DATA.kpiDelta.revenue}%.` + note;
-  if (/прибыл|марж/.test(q)) return `Чистая прибыль: ${mln(pi.fact * set.profitRate)}, маржа ${pct(set.margin)}. По каналам: ` + DATA.channels.map(c => `${c.name} ${pct(c.margin)}`).join(', ') + '.' + (S.some(s => s.profit < 0) ? `\nВ минус: ${S.filter(s => s.profit < 0).map(s => s.art).join(', ')}.` : '') + note;
-  if (/денег|деньг|касс|счет|счёт|прогноз/.test(q)) return `На счетах ≈ ${mln(cashNow())}. ` + (DATA.gap ? `Прогноз показывает кассовый разрыв ${fshort(addD(DATA.gap.i))} (баланс ${mln(DATA.gap.bal)}). Решение — в «Центре решений».` : 'Кассовых разрывов на 30 дней нет.') + note;
-  if (/склад|остат|артикул|дозаказ/.test(q)) { const l = S.filter(s => s.days < set.minDaysStock); return l.length ? 'Заканчиваются: ' + l.map(s => `${s.art} (${Math.floor(s.days)} дн., остаток ${s.stock})`).join('; ') + '.' + note : 'Все артикулы обеспечены более чем на ' + set.minDaysStock + ' дней.' + note; }
-  if (/реклам|дрр|кампани/.test(q)) { const b = C.filter(c => c.drr > set.maxDrr); return b.length ? `Выше порога ДРР ${set.maxDrr}%: ` + b.map(c => `«${c.name}» ${pct(c.drr)}`).join('; ') + '.' + note : 'Все кампании в пределах порога ДРР.' + note; }
+  const nt = b => (isLive(b) ? '' : '\n\n(Это демо-данные — источник ещё не подключён в «Интеграциях».)');
+  if (/выруч|план|продаж/.test(q)) return `Выручка за месяц: ${mln(pi.fact)} — ${pct(pi.p, 0)} плана ${mln(pi.plan)}. Прогноз на конец месяца: ${mln(pi.fc)}${pi.fc < pi.plan ? ', до плана не хватает ' + mln(pi.plan - pi.fc) : ''}. Изменение к прошлому месяцу: ${DATA.kpi.revenue.d > 0 ? '+' : ''}${DATA.kpi.revenue.d}%.` + nt('revenue');
+  if (/прибыл|марж/.test(q)) return `Чистая прибыль с начала месяца: ${mln(DATA.kpi.profit.v)}, маржа ${pct(DATA.kpi.margin.v)}. По каналам: ` + DATA.channels.map(c => `${c.name} ${pct(c.margin)}`).join(', ') + '.' + (S.some(s => s.profit < 0) ? `\nВ минус: ${S.filter(s => s.profit < 0).map(s => s.art).join(', ')}.` : '') + nt('profit');
+  if (/денег|деньг|касс|счет|счёт|прогноз/.test(q)) return `На счетах ≈ ${mln(cashNow())}. ` + (DATA.gap ? `Прогноз показывает кассовый разрыв ${fshort(addD(DATA.gap.i))} (баланс ${mln(DATA.gap.bal)}). Решение — в «Центре решений».` : 'Кассовых разрывов на 30 дней нет.') + nt('cash');
+  if (/склад|остат|артикул|дозаказ/.test(q)) { const l = S.filter(s => s.days < set.minDaysStock); return l.length ? 'Заканчиваются: ' + l.map(s => `${s.art} (${daysTxt(s.days)}, остаток ${s.stock})`).join('; ') + '.' + nt('stock') : 'Все артикулы обеспечены более чем на ' + set.minDaysStock + ' дней.' + nt('stock'); }
+  if (/реклам|дрр|кампани/.test(q)) { const b = C.filter(c => c.drr > set.maxDrr); return b.length ? `Выше порога ДРР ${set.maxDrr}%: ` + b.map(c => `«${c.name}» ${pct(c.drr)}`).join('; ') + '.' + nt('ads') : 'Все кампании в пределах порога ДРР.' + nt('ads'); }
   if (/задач|горит|просроч/.test(q)) return `Открытых задач: ${tc.open}, на сегодня: ${tc.today}, просрочено: ${tc.over}.` + (tc.over ? '\nПросрочены: ' + tasks.filter(t => t.status !== 'done' && t.due < isoD(0)).map(t => t.title).join('; ') + '.' : '');
-  if (/сделк|crm|воронк|клиент/.test(q)) { const sum = deals.filter(d => d.stage !== 'Оплачено').reduce((a, d) => a + d.sum, 0); return `В CRM ${deals.length} сделок, в воронке ${mln(sum)}. Оплачено: ${deals.filter(d => d.stage === 'Оплачено').length}.`; }
+  if (/сделк|crm|воронк|клиент/.test(q)) { const sum = deals.filter(d => !isWon(d)).reduce((a, d) => a + d.sum, 0); return `В CRM ${deals.length} сделок, в воронке ${mln(sum)}. Оплачено: ${deals.filter(d => isWon(d)).length}.`; }
   if (/документ|подпис|акт/.test(q)) { const w = docs.filter(d => d.status === 'Ждёт подписи'); return `Документов: ${docs.length}. Ждут подписи: ${w.length}${w.length ? ' — ' + w.map(d => d.name).join('; ') : ''}.`; }
   return 'Я отвечаю по данным дашборда: выручка и план, прибыль, деньги, склад, реклама, задачи, сделки, документы. Если данных нет — так и скажу, выдумывать цифры не буду.';
 }
@@ -717,17 +764,17 @@ document.addEventListener('click', e => {
   switch (a) {
     case 'ai': aiOpen(); break;
     case 'aiclose': $('#drawer').classList.remove('open'); break;
-    case 'sync': lastSync = new Date().toISOString(); save('sync', lastSync); renderHead(); toast(DATA.demo ? 'Демо-данные: подключите источники в «Интеграциях»' : 'Данные обновлены'); break;
+    case 'sync': runSync(); break;
     case 'newTask': taskModal(); break;
     case 'editTask': taskModal(id); break;
     case 'newDeal': dealModal(); break;
     case 'editDeal': dealModal(id); break;
     case 'quick': fTasks.quick = fTasks.quick === el.dataset.q ? '' : el.dataset.q; render(); break;
     case 'mv': { const t = tasks.find(x => x.id === id), i = TCOL.findIndex(c => c[0] === t.status) + +el.dataset.d; t.status = TCOL[i][0]; saveAll(); render(); break; }
-    case 'mvDeal': { const d = deals.find(x => x.id === id), i = DATA.stages.indexOf(d.stage) + +el.dataset.d; d.stage = DATA.stages[i]; saveAll(); render(); break; }
+    case 'mvDeal': { const d = deals.find(x => x.id === id); setDealStage(d, DATA.stages[DATA.stages.indexOf(d.stage) + +el.dataset.d]); break; }
     case 'upload': $('#file').click(); break;
     case 'docInfo': { const d = docs.find(x => x.id === id); modal(esc(d.name), `<div class="list"><div><div class="g">Источник</div><b>${d.source}</b></div><div><div class="g">Тип</div><b>${esc(d.type)}</b></div><div><div class="g">Контрагент</div><b>${esc(d.cp)}</b></div><div><div class="g">Сумма</div><b>${d.sum ? rub(d.sum) : '—'}</b></div><div><div class="g">Дата</div><b>${fdate(d.date)}</b></div><div><div class="g">Статус</div>${docTag(d.status)}</div></div>`); break; }
-    case 'connect': { const s = DATA.sources.find(x => x.id === id); modal('Подключение: ' + s.name, `<p><b>Где взять ключ:</b> ${s.how}.</p><p class="mut" style="margin-top:10px">Ключи вписываются только в файл <code>.env</code> на сервере и никогда не попадают в браузер. Серверная часть подключается на этапе 2 — пока этот источник работает в демо-режиме.</p>`); break; }
+    case 'connect': { const s = DATA.sources.find(x => x.id === id); modal('Подключение: ' + s.name, `<p><b>Где взять ключ:</b> ${s.how}.</p><p class="mut" style="margin-top:10px">Ключи вписываются только в файл <code>.env</code> на сервере и никогда не попадают в браузер. ${(s.keys || []).length ? 'Скопируйте .env.example в .env, вставьте ключ и перезапустите сервер (npm start).' : 'Этот источник подключается на этапе 3.'}</p>${DATA.live ? '' : '<p class="warn" style="margin-top:10px">Сейчас страница открыта без сервера — работает демо-режим.</p>'}`); break; }
     case 'dtab': decTab = el.dataset.t; render(); break;
     case 'recalc': render(); toast('Решения пересчитаны по текущим данным'); break;
     case 'dAccept': {
@@ -761,7 +808,7 @@ document.addEventListener('dragend', () => { document.querySelectorAll('.drag,.o
 document.addEventListener('dragover', e => { const c = e.target.closest('.colm'); if (c && c.dataset.board === dragBoard) { e.preventDefault(); document.querySelectorAll('.over').forEach(x => x.classList.remove('over')); c.classList.add('over'); } });
 document.addEventListener('drop', e => {
   const c = e.target.closest('.colm'); if (!c || c.dataset.board !== dragBoard) return; e.preventDefault();
-  if (dragBoard === 'tasks') tasks.find(t => t.id === dragId).status = c.dataset.col; else deals.find(d => d.id === dragId).stage = c.dataset.col;
+  if (dragBoard === 'tasks') tasks.find(t => t.id === dragId).status = c.dataset.col; else { setDealStage(deals.find(d => d.id === dragId), c.dataset.col); return; }
   saveAll(); render();
 });
 /* поиск */
@@ -778,7 +825,89 @@ $('#aiform').addEventListener('submit', e => { e.preventDefault(); const v = $('
 $('#burger').onclick = () => { $('#side').classList.add('open'); $('#scrim').classList.add('show'); };
 $('#scrim').onclick = () => { $('#side').classList.remove('open'); $('#scrim').classList.remove('show'); };
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); $('#drawer').classList.remove('open'); } });
-go(location.hash.slice(1) || 'home');
+/* ===================== сервер: живые данные ===================== */
+async function api(path, opt = {}) {
+  const r = await fetch(path, { ...opt, headers: opt.body ? { 'Content-Type': 'application/json' } : {} });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'Ошибка сервера ' + r.status);
+  return j;
+}
+const pushTimers = {};
+function pushStore(name, items) {
+  clearTimeout(pushTimers[name]);
+  pushTimers[name] = setTimeout(() => api('/api/store/' + name, { method: 'PUT', body: JSON.stringify({ items }) }).catch(e => toast('Не сохранилось на сервере: ' + e.message)), 300);
+}
+function setDealStage(d, stage) {
+  if (!d || !stage || d.stage === stage) { render(); return; }
+  const old = d.stage; d.stage = stage; render();
+  if (!crmLive) { saveAll(); return; }
+  api('/api/deals/' + encodeURIComponent(d.id), { method: 'PATCH', body: JSON.stringify({ stage }) })
+    .then(() => toast('Этап сохранён в CRM'))
+    .catch(e => { d.stage = old; render(); toast('CRM не приняла изменение: ' + e.message); });
+}
+async function saveDealCrm(id, v) {
+  try {
+    if (id) { await api('/api/deals/' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify(v) }); Object.assign(deals.find(x => x.id === id), v); }
+    else { const r = await api('/api/deals', { method: 'POST', body: JSON.stringify(v) }); deals.push({ id: r.id, ...v }); }
+    toast('Сохранено в CRM'); render();
+  } catch (e) { toast('CRM не приняла изменение: ' + e.message); }
+}
+const LIVE_KEYS = ['owner', 'team', 'plan', 'forecast', 'gap', 'cashEvents', 'channels', 'taxes', 'sales', 'skus', 'campaigns', 'accounts', 'pnl'];
+function applyLive(r) {
+  DATA.live = true; DATA.demo = false;
+  DATA.demoBlocks = r.demo || {}; DATA.notes = r.notes || [];
+  for (const k of LIVE_KEYS) if (r[k] !== undefined) DATA[k] = r[k];
+  if (r.settings) DATA.settings = { ...DATA.settings, ...r.settings };
+  if (r.team) DATA.team = r.team;
+  Object.assign(DATA.kpi, r.kpi || {});
+  crmLive = !!r.crm;
+  if (r.crm) { DATA.stages = r.crm.stages; deals = r.crm.deals; }
+  if (r.lastSync) lastSync = r.lastSync;
+  syncing = !!r.syncing;
+}
+async function loadStore() {
+  const map = { tasks: () => tasks, docs: () => docs, decisions: () => decState, deals: () => deals };
+  for (const k of Object.keys(map)) {
+    if (k === 'deals' && crmLive) continue;
+    const r = await api('/api/store/' + k);
+    if (r.items == null) pushStore(k, map[k]()); // первый запуск: переносим то, что было в браузере
+    else if (k === 'tasks') tasks = r.items; else if (k === 'docs') docs = r.items; else if (k === 'decisions') decState = r.items; else deals = r.items;
+  }
+}
+async function refreshLive() {
+  applyLive(await api('/api/dashboard'));
+  srv = await api('/api/status');
+  render();
+}
+async function runSync() {
+  if (!DATA.live) { lastSync = new Date().toISOString(); save('sync', lastSync); renderHead(); toast('Демо-режим: запустите сервер и подключите источники в «Интеграциях»'); return; }
+  try {
+    await api('/api/sync', { method: 'POST' });
+    syncing = true; renderHead(); toast('Синхронизация запущена');
+    for (let i = 0; i < 200; i++) {
+      await new Promise(r => setTimeout(r, 3000));
+      srv = await api('/api/status');
+      if (!srv.syncing) break;
+    }
+    await refreshLive();
+    const bad = srv.sources.filter(s => s.enabled && s.error);
+    toast(bad.length ? `Обновлено, есть ошибки: ${bad.map(s => s.name).join(', ')} — см. «Интеграции»` : 'Данные обновлены');
+  } catch (e) { syncing = false; renderHead(); toast('Не удалось обновить: ' + e.message); }
+}
+async function boot() {
+  go(location.hash.slice(1) || 'home');
+  if (!location.protocol.startsWith('http')) return; // открыт файл — демо-режим
+  try {
+    applyLive(await api('/api/dashboard'));
+    srv = await api('/api/status');
+    await loadStore();
+    render();
+    setInterval(() => { if (!syncing) refreshLive().catch(() => {}); }, 5 * 60000);
+  } catch (e) {
+    console.warn('Сервер недоступен — демо-режим:', e.message);
+  }
+}
+boot();
 </script>
 </body>
 </html>
