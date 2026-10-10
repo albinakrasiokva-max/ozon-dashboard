@@ -63,6 +63,14 @@ const API = {
     { operation_type: 'OperationElectronicServiceStencil', operation_type_name: 'Услуга продвижения Оплата за клик', type: 'services', amount: -500, accruals_for_sale: 0, sale_commission: 0, items: [], services: [] },
     { operation_type: 'OperationSubscriptionPremium', operation_type_name: 'Подписка Premium', type: 'services', amount: -990, accruals_for_sale: 0, sale_commission: 0, items: [], services: [] }
   ] } }),
+  'api-seller.ozon.ru/v1/finance/accrual/types': () => ({ accrual_types: [
+    { id: 10, name: 'Доставка покупателю' }, { id: 32, name: 'Логистика' }, { id: 1, name: 'Эквайринг' },
+    { id: 3, name: 'Вознаграждение Ozon' }, { id: 20, name: 'Подписка Premium' }] }),
+  'api-seller.ozon.ru/v1/finance/accrual/by-day': (u, opt) => JSON.parse(opt.body).date !== D(0) ? { accruals: [], last_id: '' } : { last_id: '', accruals: [
+    { accrual_id: 1, type_id: 10, accrued_category: 'POSTING', total_amount: { amount: '1700', currency: 'RUB' },
+      posting: { products: [{ sku: 555, quantity: 2, name: 'Подушка', delivery: { services: [{ type_id: 32, accrued: { amount: '-300', currency: 'RUB' } }] } }] },
+      item_fees: { fees: [{ fees: [{ type_id: 1, accrued: { amount: '-100' } }, { type_id: 3, accrued: { amount: '-900' } }] }] } },
+    { accrual_id: 2, type_id: 20, accrued_category: 'NON_ITEM', total_amount: { amount: '-990', currency: 'RUB' } }] },
   // ---- Ozon Performance ----
   'api-performance.ozon.ru/api/client/token': () => ({ access_token: 'test-token', expires_in: 1800 }),
   'api-performance.ozon.ru/api/client/campaign/9/objects': () => ({ list: [{ id: '555' }] }),
