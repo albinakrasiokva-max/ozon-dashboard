@@ -479,7 +479,8 @@ const NAV = [
 let page = 'home';
 function renderNav() {
   const nd = allDecisions().filter(d => d.st.status === 'new').length, tc = taskCounts().over;
-  $('#nav').innerHTML = NAV.map(([id, ic, nm]) => `<a data-go="${id}" class="${page === id ? 'on' : ''}"><span class="ic">${ic}</span>${nm}${id === 'decisions' && nd ? `<span class="bd">${nd}</span>` : ''}${id === 'tasks' && tc ? `<span class="bd">${tc}</span>` : ''}</a>`).join('');
+  $('#nav').innerHTML = NAV.map(([id, ic, nm]) => `<a data-go="${id}" class="${page === id ? 'on' : ''}"><span class="ic">${ic}</span>${nm}${id === 'decisions' && nd ? `<span class="bd">${nd}</span>` : ''}${id === 'tasks' && tc ? `<span class="bd">${tc}</span>` : ''}</a>`).join('')
+    + (/^https?:$/.test(location.protocol) ? '<a href="/ozon"><span class="ic">🔵</span>Аналитика Ozon</a>' : ''); // отдельная страница, только с сервера
 }
 function go(p) {
   page = NAV.some(n => n[0] === p) ? p : 'home';

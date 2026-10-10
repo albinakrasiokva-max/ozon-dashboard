@@ -8,7 +8,7 @@ RUN apk add --no-cache tzdata
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
-COPY index.html server.js settings.json ./
+COPY index.html ozon.html server.js settings.json ./
 COPY lib ./lib
 
 # Данные (база, файлы документов, настройки) — на постоянном диске /data

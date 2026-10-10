@@ -194,6 +194,7 @@ th.sticky-col{z-index:3;background:var(--raised)}
   </div>
   <div class="controls">
     <label class="period">Период <select id="periodSel" aria-label="Период"></select></label>
+    <button id="apiBtn" class="btn" type="button" hidden title="Запросить свежие данные из Ozon API">Обновить из Ozon</button>
     <button id="snapBtn" class="btn" type="button" title="Сохранить ключевые показатели текущего периода для графика тренда">Сохранить срез</button>
     <label class="btn primary" for="fileInput" tabindex="0">Загрузить отчёты</label>
     <input type="file" id="fileInput" multiple accept=".xlsx,.xls,.csv" hidden>
@@ -1243,6 +1244,8 @@ function renderHeader() {
   const M = S.model;
   $('#dataStamp').textContent = !M.have.any ? 'Загрузите отчёты, чтобы начать'
     : `${M.range ? 'Данные с ' + isoToRu(M.range.from) + ' по ' + isoToRu(M.range.to) : 'Нет отчётов о продажах за период'}${M.stockDate ? ', остатки на ' + isoToRu(M.stockDate) : ''}`;
+  if (apiOn()) $('#dataStamp').textContent += ` · Ozon API: ${S.api.syncing ? 'обновляется…' : S.api.lastSync ? 'обновлено ' + timeRu(S.api.lastSync) : 'ждём первую синхронизацию'}`;
+  $('#apiBtn').hidden = !apiOn();
 }
 
 /* ---------- KPI-строка ---------- */
@@ -1278,6 +1281,11 @@ function renderKPI() {
 
 /* ---------- Пустое состояние ---------- */
 function emptyState() {
+  if (apiOn()) return `<div class="empty">
+    <h2>Данные из Ozon загружаются</h2>
+    <p class="muted">Магазин подключён по API. Первая синхронизация занимает несколько минут — страница обновится сама. ${S.api.seller.error ? `<br><b class="neg">${esc(S.api.seller.error)}</b>` : ''}</p>
+    <p class="muted">Можно не ждать и загрузить выгрузки вручную.</p>
+    <label class="btn primary" for="fileInput">Выбрать файлы</label></div>`;
   return `<div class="empty">
     <h2>Загрузите выгрузки из личного кабинета Ozon</h2>
     <p class="muted">Файлы разбираются прямо в браузере и никуда не отправляются. Тип отчёта определяется по колонкам, имя файла не важно. Можно перетащить файлы на страницу.</p>
@@ -1706,6 +1714,7 @@ function renderData() {
   const skus = M.skus.filter(s => s.hasSales || s.stock);
   const rateInput = (k, label, unit) => `<label>${label}, ${unit}<input type="number" step="0.01" min="0" data-rate="${k}" value="${R[k] ?? ''}"></label>`;
   el.innerHTML = `<div class="stack">
+    ${apiPanel()}
     <div class="panel"><div class="panel-head"><h2>Загруженные отчёты</h2><p>Хранятся в этом браузере. При загрузке файла за тот же период будет предложено заменить или объединить данные.</p></div>
       ${ds.length ? table('files', [
         { key: 'type', label: 'Тип', val: d => TYPE_LABEL[d.type] },
@@ -1713,7 +1722,7 @@ function renderData() {
         { key: 'period', label: 'Период или дата среза', val: d => d.period?.from || d.snapshotDate, fmt: (v, d) => d.period ? `${isoToRu(d.period.from)} – ${isoToRu(d.period.to)}` : d.snapshotDate ? 'срез на ' + isoToRu(d.snapshotDate) : '—' },
         { key: 'n', label: 'Товаров', num: 1, val: d => d.type === 'ads' ? d.data.campaigns.length : Object.keys(d.data.items || {}).length || Object.keys(d.data.cost || {}).length, fmt: (v, d) => d.type === 'ads' ? `${v} кампаний` : num(v) },
         { key: 'w', label: 'Замечания', nosort: 1, cell: d => `<td class="small ${d.warnings?.length ? 'warn' : 'faint'}" style="max-width:320px">${d.warnings?.length ? d.warnings.map(esc).join('<br>') : 'нет'}</td>` },
-        { key: 'del', label: '', nosort: 1, cell: d => `<td><button class="btn small danger" data-del-ds="${d.id}">Удалить</button></td>` }], ds, { sort: { key: 'type', dir: 1 } }) : stub('Отчёты ещё не загружены.')}</div>
+        { key: 'del', label: '', nosort: 1, cell: d => d.source === 'api' ? '<td class="small faint">обновляется сам</td>' : `<td><button class="btn small danger" data-del-ds="${d.id}">Удалить</button></td>` }], ds, { sort: { key: 'type', dir: 1 } }) : stub('Отчёты ещё не загружены.')}</div>
     <div class="panel"><div class="panel-head"><h2>Удержания Ozon и налог</h2><p>Точные суммы удержаний по SKU даёт отчёт по начислениям — если он загружен, ставки ниже используются лишь для товаров, которых в нём нет. Ставки нужны, только если работаете по отчёту о реализации, где удержаний нет. Посмотрите свои тарифы в личном кабинете и введите их — расчёты по ставкам помечаются как оценка.</p></div>
       <div class="form-row">
         ${rateInput('commission', 'Комиссия', '% выручки')}${rateInput('acquiring', 'Эквайринг', '% выручки')}${rateInput('logistics', 'Логистика', '₽ за шт')}
@@ -1878,8 +1887,82 @@ window.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth =
 window.addEventListener('dragover', e => e.preventDefault());
 window.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; $('#drop').hidden = true; if (e.dataTransfer?.files?.length) ingestFiles(e.dataTransfer.files); });
 
+/* =====================================================================
+   15. ДАННЫЕ ИЗ OZON API
+   Открытая с сервера BrandOS (адрес /ozon), страница сама получает отчёты из Ozon API:
+   начисления за 3 месяца, остатки на сегодня и рекламу из Ozon Performance — в тех же формах,
+   что и при разборе выгрузок. Ключи хранятся только на сервере (.env), в браузер не попадают.
+   Открытая просто как файл, страница работает по-старому — на загруженных выгрузках.
+   Если за тот же месяц загружен файл того же типа, берётся файл, а данные API за этот месяц пропускаются.
+   ===================================================================== */
+const API_URL = /^https?:$/.test(location.protocol);
+S.api = null;   // {seller:{on,at,error}, perf:{…}, lastSync, syncing, skipped:[]}
+const apiOn = () => !!(S.api && (S.api.seller.on || S.api.perf.on));
+const timeRu = iso => { const d = new Date(iso); return `${isoToRu(isoOf(d))} в ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+
+async function loadFromApi({ quiet = true } = {}) {
+  if (!API_URL) return false;
+  let j;
+  try {
+    const r = await fetch('/api/ozon/reports', { credentials: 'same-origin', cache: 'no-store' });
+    if (r.status === 401) { location.href = '/login'; return false; }
+    if (!r.ok) return false;   // страница открыта не с сервера BrandOS
+    j = await r.json();
+  } catch (e) { if (!quiet) toast('Сервер не ответил: ' + e.message, 'err'); return false; }
+  const hadApi = S.datasets.some(d => d.source === 'api');
+  const manual = S.datasets.filter(d => d.source !== 'api'), taken = [], skipped = [];
+  for (const ds of j.datasets || []) {
+    const clash = ds.period && manual.find(d => d.type === ds.type && overlaps(d.period, ds.period));
+    if (clash) skipped.push(`${TYPE_LABEL[ds.type]} за ${monthLabel(ds.period.from.slice(0, 7)).toLowerCase()}: используется файл «${clash.fileName}»`);
+    else taken.push(ds);
+  }
+  S.datasets = [...manual, ...taken];
+  S.api = { seller: j.seller, perf: j.perf, lastSync: j.lastSync, syncing: j.syncing, skipped };
+  save.datasets();
+  const keys = periodKeys();
+  if (!hadApi && taken.length && S.period === 'all' && keys.length) S.period = keys[keys.length - 1];
+  if (S.period !== 'all' && !keys.includes(S.period)) S.period = keys[keys.length - 1] || 'all';
+  save.period();
+  recomputeAll();
+  return true;
+}
+
+async function refreshFromOzon() {
+  const b = $('#apiBtn'); b.disabled = true; b.textContent = 'Обновляю…';
+  try {
+    const r = await fetch('/api/sync', { method: 'POST', credentials: 'same-origin' });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'ошибка ' + r.status);
+    for (let i = 0; i < 120; i++) {   // ждём до 6 минут: у Ozon строгие лимиты, синхронизация небыстрая
+      await new Promise(res => setTimeout(res, 3000));
+      const st = await (await fetch('/api/status', { credentials: 'same-origin', cache: 'no-store' })).json();
+      if (!st.syncing) break;
+    }
+    await loadFromApi({ quiet: false });
+    const err = S.api?.seller.error || S.api?.perf.error;
+    toast(err ? 'Обновлено с ошибкой: ' + err : 'Данные из Ozon обновлены, показатели пересчитаны', err ? 'err' : 'ok');
+  } catch (e) { toast('Не удалось обновить данные из Ozon: ' + e.message, 'err'); }
+  finally { b.disabled = false; b.textContent = 'Обновить из Ozon'; }
+}
+
+function apiPanel() {
+  if (!S.api) return '';
+  const line = (label, x, how) => !x.on
+    ? `<li><b>${label}</b> — <span class="faint">не подключено. ${how}</span></li>`
+    : `<li><b>${label}</b> — ${x.error ? `<span class="neg">ошибка: ${esc(x.error)}</span>` : `<span class="pos">подключено</span>`}${x.at ? `<span class="muted">, последние данные ${timeRu(x.at)}</span>` : ''}</li>`;
+  return `<div class="panel"><div class="panel-head"><h2>Подключение к Ozon</h2><p>Данные подтягиваются с сервера сами: при открытии страницы, раз в 10 минут и по кнопке «Обновить из Ozon». Сервер забирает их из Ozon по расписанию. Себестоимость в API нет — её по-прежнему задаёте вручную или файлом.</p></div>
+    <ul class="small" style="margin:0;padding-left:18px;line-height:1.8">
+      ${line('Ozon Seller API', S.api.seller, 'Впишите OZON_CLIENT_ID и OZON_API_KEY в .env на сервере (роль ключа — Admin read only). Даёт продажи, возвраты, удержания Ozon и остатки.')}
+      ${line('Ozon Performance API', S.api.perf, 'Впишите OZON_PERF_CLIENT_ID и OZON_PERF_CLIENT_SECRET. Даёт расход, показы и клики по кампаниям. Без него реклама берётся из начислений и делится на все товары.')}
+    </ul>
+    ${S.api.skipped.length ? `<p class="small warn" style="margin-top:10px">Вместо данных API используются загруженные файлы:<br>${S.api.skipped.map(esc).join('<br>')}<br>Удалите файл, чтобы данные за этот месяц шли из API.</p>` : ''}</div>`;
+}
+document.addEventListener('click', e => { if (e.target.id === 'apiBtn') refreshFromOzon(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && apiOn()) loadFromApi(); });
+setInterval(() => { if (apiOn() && !document.hidden) loadFromApi(); }, 10 * 60 * 1000);
+
 /* ---------- старт ---------- */
 recomputeAll();
+loadFromApi();
 if (!window.Chart) waitLibs().then(() => setTimeout(() => { if (window.Chart) renderTab(); }, 600));
 </script>
 </body>
