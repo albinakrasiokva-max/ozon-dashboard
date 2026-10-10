@@ -150,9 +150,11 @@ async function handle(req, res) {
   }
   if (method !== 'GET' && !sameOrigin(req)) throw fail(403, 'Запрос с чужого сайта отклонён');
 
+  // OZON_ONLY=1 — отдельный сервис «Аналитика Ozon»: на главной сразу эта страница, BrandOS не показывается
+  const ozonOnly = process.env.OZON_ONLY === '1';
   if (method === 'GET' && (p === '/' || p === '/index.html')) {
     res.writeHead(200, HTML_HEADERS);
-    return fs.createReadStream(path.join(ROOT, 'index.html')).pipe(res);
+    return fs.createReadStream(path.join(ROOT, ozonOnly ? 'ozon.html' : 'index.html')).pipe(res);
   }
   // «Аналитика Ozon»: та же страница, что работает с Excel-выгрузками, но данные приходят из API
   if (method === 'GET' && (p === '/ozon' || p === '/ozon.html')) {
