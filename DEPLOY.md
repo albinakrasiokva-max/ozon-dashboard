@@ -20,8 +20,9 @@ node -e "console.log(require('crypto').randomBytes(12).toString('base64url'))"
    - `DASHBOARD_PASSWORD` — пароль команды;
    - `RAILWAY_RUN_UID=0` — нужно, чтобы приложение могло писать на диск (Railway монтирует тома от root);
    - ключи источников из `.env.example`, которые у вас есть: `WB_TOKEN`, `OZON_CLIENT_ID`, `OZON_API_KEY`, `ANTHROPIC_API_KEY` и другие.
-   Переменные `HOST`, `PORT`, `DATA_DIR`, `SETTINGS_FILE` задавать не нужно: они уже есть в образе, а `PORT` Railway подставит сам.
-5. **Ссылка.** Сервис → **Settings** → **Networking** → **Generate Domain**. Получится адрес вида `https://…up.railway.app`.
+   - `PORT=3000` — чтобы порт приложения совпадал с портом домена.
+   Переменные `HOST`, `DATA_DIR`, `SETTINGS_FILE` задавать не нужно: они уже есть в образе.
+5. **Ссылка.** Сервис → **Settings** → **Networking** → **Generate Domain**, порт — 3000. Получится адрес вида `https://…up.railway.app`.
    Можно подключить и свой домен.
 6. **Только одна копия сервиса** (Replicas = 1): Telegram-бот и база в файле рассчитаны на один экземпляр.
 
