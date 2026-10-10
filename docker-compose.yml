@@ -1,0 +1,36 @@
+# Свой сервер: дашборд + Caddy (HTTPS-сертификат выпускается сам).
+# Запуск: заполните .env (в том числе DOMAIN и DASHBOARD_PASSWORD), затем  docker compose up -d --build
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      DATA_DIR: /data
+      SETTINGS_FILE: /data/settings.json
+      TRUST_PROXY: "1"
+      COOKIE_SECURE: "1"
+    volumes:
+      - ./data:/data
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [app]
+    environment:
+      DOMAIN: ${DOMAIN:?Укажите DOMAIN в .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

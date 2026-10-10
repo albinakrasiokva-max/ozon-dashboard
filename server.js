@@ -14,11 +14,20 @@ import { aiEnabled, chat } from './lib/ai.js';
 import { snapshotForAI } from './lib/snapshot.js';
 import { startTelegram } from './lib/telegram.js';
 import { runDecisions, maybeDailyRun, refreshStatuses, act, isRunning } from './lib/decisions.js';
+import { authEnabled, checkStartup, isAuthed, checkPassword, tooManyFails, clientIp, makeSession, sessionCookie, clearCookie, sameOrigin, loginPage } from './lib/auth.js';
+import { stopTelegram } from './lib/telegram.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 loadEnv(path.join(ROOT, '.env'));
 process.env.TZ ||= 'Europe/Moscow'; // дни считаются по Москве, если не задано иное
 process.chdir(ROOT); // settings.json и data/ — рядом с server.js
+
+// На хостинге settings.json лежит на постоянном диске (SETTINGS_FILE); при первом запуске копируем шаблон
+if (process.env.SETTINGS_FILE && !process.env.SETTINGS_JSON && !fs.existsSync(process.env.SETTINGS_FILE)) {
+  fs.mkdirSync(path.dirname(process.env.SETTINGS_FILE), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'settings.json'), process.env.SETTINGS_FILE);
+  console.log(`Создан ${process.env.SETTINGS_FILE} из шаблона — впишите туда цифры бизнеса.`);
+}
 
 const LISTS = ['tasks', 'docs', 'deals']; // массивы элементов с id; решения меняются только через /api/decisions
 const MAPS = [];
@@ -83,19 +92,51 @@ function storeOp(name, id, method, body) {
   return list[i];
 }
 
+const HTML_HEADERS = {
+  'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Frame-Options': 'DENY',
+  'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin'
+};
+
 async function handle(req, res) {
   const url = new URL(req.url, 'http://localhost');
   const p = url.pathname, method = req.method;
   let m;
 
+  if (method === 'GET' && p === '/api/health') return send(res, 200, { ok: true });
+
+  // Вход по паролю
+  if (p === '/login' && authEnabled()) {
+    if (method === 'GET') { res.writeHead(200, HTML_HEADERS); return res.end(loginPage()); }
+    if (method === 'POST') {
+      const ip = clientIp(req);
+      if (tooManyFails(ip)) { res.writeHead(429, HTML_HEADERS); return res.end(loginPage('Слишком много неверных попыток. Попробуйте через 15 минут.')); }
+      const form = new URLSearchParams((await readRaw(req, 10000)).toString('utf8'));
+      if (!checkPassword(ip, form.get('password') || '')) {
+        console.warn(`[auth] неверный пароль с ${ip}`);
+        res.writeHead(401, HTML_HEADERS); return res.end(loginPage('Неверный пароль'));
+      }
+      res.writeHead(302, { Location: '/', 'Set-Cookie': sessionCookie(req, makeSession()) });
+      return res.end();
+    }
+  }
+  if (p === '/logout' && method === 'POST') {
+    res.writeHead(302, { Location: authEnabled() ? '/login' : '/', 'Set-Cookie': clearCookie(req) });
+    return res.end();
+  }
+  if (!isAuthed(req)) {
+    if (p.startsWith('/api/')) return send(res, 401, { error: 'Нужно войти' });
+    res.writeHead(302, { Location: '/login' });
+    return res.end();
+  }
+  if (method !== 'GET' && !sameOrigin(req)) throw fail(403, 'Запрос с чужого сайта отклонён');
+
   if (method === 'GET' && (p === '/' || p === '/index.html')) {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+    res.writeHead(200, HTML_HEADERS);
     return fs.createReadStream(path.join(ROOT, 'index.html')).pipe(res);
   }
-  if (method === 'GET' && p === '/api/health') return send(res, 200, { ok: true });
   if (method === 'GET' && p === '/api/dashboard') return send(res, 200, dashboard());
   if (method === 'GET' && p === '/api/status') {
-    return send(res, 200, { sources: sourceStatus(), syncing: isSyncing(), lastSync: getDb().lastSync, ai: aiEnabled() });
+    return send(res, 200, { sources: sourceStatus(), syncing: isSyncing(), lastSync: getDb().lastSync, ai: aiEnabled(), auth: authEnabled() });
   }
   if (method === 'POST' && p === '/api/sync') {
     syncAll().catch(e => console.error('[sync]', e.message));
@@ -210,9 +251,26 @@ const server = http.createServer((req, res) => {
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
+const startupError = checkStartup(HOST);
+if (startupError) {
+  console.error(startupError);
+  process.exit(1);
+}
+
+// Хостинг останавливает контейнер сигналом SIGTERM: дописываем базу и закрываемся
+for (const sig of ['SIGTERM', 'SIGINT']) {
+  process.on(sig, () => {
+    console.log('Останавливаюсь…');
+    stopTelegram();
+    try { saveDb(); } catch (e) { console.error('Не удалось сохранить базу:', e.message); }
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 5000).unref();
+  });
+}
+
 server.listen(PORT, HOST, () => {
   const on = enabledKeys();
-  console.log(`BrandOS: http://${HOST}:${PORT}`);
+  console.log(`BrandOS: http://${HOST}:${PORT}${authEnabled() ? ' (вход по паролю)' : ''}`);
   console.log(on.length ? `Подключены: ${on.join(', ')}` : 'Ключей в .env нет — дашборд работает на демо-данных.');
   if (process.env.NO_SYNC === '1') return console.log('NO_SYNC=1 — синхронизация и бот отключены, показываются сохранённые данные.');
   const min = startScheduler(getSettings().syncMinutes);

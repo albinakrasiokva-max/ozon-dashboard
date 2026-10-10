@@ -36,6 +36,8 @@ a{color:var(--blue);text-decoration:none}
 .nav a .bd{margin-left:auto;background:var(--red);color:#fff;border-radius:99px;font-size:11px;padding:0 7px;font-weight:600}
 .ai-btn{margin-top:12px;padding:12px;border-radius:12px;background:var(--grad);color:#fff;font-weight:600;box-shadow:0 0 22px rgba(124,108,255,.45)}
 .ai-btn:hover{filter:brightness(1.1)}
+.logout{margin-top:8px;padding:8px;border-radius:10px;color:var(--mut);font-size:13px}
+.logout:hover{color:var(--text);background:rgba(255,255,255,.04)}
 .scrim{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:40}
 /* main */
 .main{flex:1;min-width:0;padding:20px 24px 60px}
@@ -178,6 +180,7 @@ h2.pt{font-size:20px;margin-bottom:4px}
     <div class="logo"><i>⚡</i>BrandOS</div>
     <nav class="nav" id="nav"></nav>
     <button class="ai-btn" data-act="ai">✨ ИИ-ассистент</button>
+    <button class="logout" id="logout" data-act="logout" hidden>Выйти</button>
   </aside>
   <div class="scrim" id="scrim"></div>
   <main class="main">
@@ -809,6 +812,7 @@ document.addEventListener('click', e => {
   const id = el.dataset.id, a = el.dataset.act;
   switch (a) {
     case 'ai': aiOpen(); break;
+    case 'logout': { const f = document.createElement('form'); f.method = 'post'; f.action = '/logout'; document.body.appendChild(f); f.submit(); break; }
     case 'aiclose': $('#drawer').classList.remove('open'); break;
     case 'sync': runSync(); break;
     case 'newTask': taskModal(); break;
@@ -883,6 +887,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal
 /* ===================== сервер: живые данные ===================== */
 async function api(path, opt = {}) {
   const r = await fetch(path, { ...opt, headers: opt.body ? { 'Content-Type': 'application/json' } : {} });
+  if (r.status === 401) { location.href = '/login'; throw new Error('Нужно войти'); } // сессия истекла
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || 'Ошибка сервера ' + r.status);
   return j;
@@ -914,6 +919,7 @@ async function uploadDoc(f) {
   try {
     toast('Загружаю «' + f.name + '»…');
     const r = await fetch('/api/docs/upload', { method: 'POST', body: f, headers: { 'Content-Type': f.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(f.name) } });
+    if (r.status === 401) { location.href = '/login'; return; }
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || 'ошибка ' + r.status);
     await loadStore();
@@ -1030,6 +1036,7 @@ async function boot() {
   try {
     applyLive(await api('/api/dashboard'));
     srv = await api('/api/status');
+    $('#logout').hidden = !srv.auth;
     await loadStore();
     render();
     setInterval(() => { if (!syncing) refreshLive().catch(() => {}); }, 5 * 60000);
