@@ -18,8 +18,9 @@ ENV NODE_ENV=production \
     TZ=Europe/Moscow \
     DATA_DIR=/data \
     SETTINGS_FILE=/data/settings.json
+# Диск подключается снаружи: на Railway — томом с путём /data, в docker-compose — через volumes.
+# Инструкцию VOLUME не используем: Railway её не принимает.
 RUN mkdir -p /data && chown node:node /data
-VOLUME /data
 
 USER node
 EXPOSE 3000
