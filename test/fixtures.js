@@ -99,6 +99,7 @@ async function mockFetch(url, opt = {}) {
     const key = Object.keys(routes).sort((a, b) => b.length - a.length).find(k => u.startsWith(k));
     if (!key) return new Response(JSON.stringify({ message: 'not mocked: ' + u }), { status: 404 });
     const body = await routes[key](u, opt);
+    if (body?.__raw) return new Response(body.__raw, { status: 200, headers: { 'Content-Type': body.contentType } });
     if (Buffer.isBuffer(body)) return new Response(body, { status: 200, headers: { 'Content-Type': 'application/octet-stream' } });
     return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
@@ -119,4 +120,19 @@ export function setupEnv() {
     AMO_SUBDOMAIN: 'test', AMO_TOKEN: 'amo-test', TBANK_TOKEN: 'tb-test'
   });
   for (const k of ['BITRIX_WEBHOOK_URL', 'TOCHKA_TOKEN', 'WB_ADS', 'WB_DOCS', 'AMO_PIPELINE_ID', 'ANTHROPIC_API_KEY', 'TELEGRAM_BOT_TOKEN', 'MAIL_USER', 'DIADOC_API_KEY']) delete process.env[k];
+}
+
+// Тот же ответ Claude, но потоком событий (SSE) — для запросов со стримингом
+export function claudeStream(text) {
+  const ev = (type, data) => `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`;
+  const msg = claudeMessage('');
+  return {
+    contentType: 'text/event-stream',
+    __raw: ev('message_start', { message: { ...msg, content: [], stop_reason: null } }) +
+      ev('content_block_start', { index: 0, content_block: { type: 'text', text: '' } }) +
+      ev('content_block_delta', { index: 0, delta: { type: 'text_delta', text } }) +
+      ev('content_block_stop', { index: 0 }) +
+      ev('message_delta', { delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 10 } }) +
+      ev('message_stop', {})
+  };
 }

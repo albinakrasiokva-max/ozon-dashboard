@@ -377,7 +377,7 @@ let lastEdit = 0;
 const saveAll = () => {
   lastEdit = Date.now();
   save('tasks', tasks); save('deals', deals); save('docs', docs); save('decisions', decState);
-  if (DATA.live) { pushStore('tasks', tasks); pushStore('docs', docs); pushStore('decisions', decState); if (!crmLive) pushStore('deals', deals); }
+  if (DATA.live) { pushStore('tasks', tasks); pushStore('docs', docs); if (!crmLive) pushStore('deals', deals); }
 };
 
 /* ===================== расчёты ===================== */
@@ -432,7 +432,7 @@ function buildDecisions() {
   const out = [], S = SKUS(), C = CAMPS(), set = DATA.settings, pi = planInfo();
   if (DATA.gap && ruleOk('forecast')) {
     const g = DATA.gap, need = Math.abs(Math.min(...DATA.forecast.filter(p => p.i > 0).map(p => p.bal)));
-    out.push({ id: 'gap', dir: 'Финансы', urg: 'high', title: `Закрыть кассовый разрыв до ${fshort(addD(g.i))}`, sit: `По прогнозу к ${fshort(addD(g.i))} на счетах не хватит денег: минимум ≈ −${mln(need)}. Крупные платежи: ${DATA.cashEvents.filter(e => e.i >= g.i - 3 && e.i <= g.i).map(e => e.name + ' ' + mln(e.amt)).join(', ')}.`, why: 'Разрыв приведёт к просрочке платежей. Проще сдвинуть закупку или взять овердрафт заранее.', steps: ['Договориться с поставщиком о переносе части платежа на 7–10 дней', 'Подключить овердрафт в банке на сумму разрыва', 'Ускорить выплаты МП: проверить удержания и возвраты'], effect: need, due: isoD(Math.max(1, g.i - 5)), conf: 80, metric: 'Минимальный остаток на счетах за 30 дней ≥ 0 ₽' });
+    out.push({ id: 'gap', dir: 'Финансы', urg: 'high', title: `Закрыть кассовый разрыв до ${fshort(addD(g.i))}`, sit: `По прогнозу к ${fshort(addD(g.i))} на счетах не хватит денег: минимум ≈ −${mln(need)}. Крупные платежи: ${DATA.cashEvents.filter(e => e.i >= g.i - 3 && e.i <= g.i).map(e => e.name + ' ' + mln(e.amt)).join(', ')}.`, why: 'Разрыв приведёт к просрочке платежей. Проще сдвинуть закупку или взять овердрафт заранее.', steps: ['Договориться с поставщиком о переносе части платежа на 7–10 дней', 'Подключить овердрафт в банке на сумму разрыва', 'Ускорить выплаты МП: проверить удержания и возвраты'], effect: 0, due: isoD(Math.max(1, g.i - 5)), conf: 80, metric: 'Минимальный остаток на счетах за 30 дней ≥ 0 ₽' });
   }
   if (ruleOk('stock')) S.filter(s => s.days < set.minDaysStock).sort((a, b) => a.days - b.days).forEach(s => {
     const qty = Math.max(10, Math.round(s.daily * 45 / 10) * 10);
@@ -450,7 +450,10 @@ function buildDecisions() {
   if (stuck.length) out.push({ id: 'crm', dir: 'CRM', urg: 'low', title: `Дожать оплату по сделкам на этапе счёта: ${stuck.length}`, sit: stuck.map(d => `${d.client} — ${rub(d.sum)}`).join('; ') + '.', why: 'Сделка на стадии счёта — самая близкая к деньгам.', steps: ['Позвонить клиенту и уточнить сроки оплаты', 'Отправить напоминание со ссылкой на счёт'], effect: stuck.reduce((a, d) => a + d.sum, 0), due: isoD(2), conf: 60, metric: 'Сделка перешла в «Оплачено»' });
   return out;
 }
+// С сервером решения общие для команды и хранятся там; без сервера — встроенные правила в браузере
+let decList = [], decRun = null, decRunning = false;
 function allDecisions() {
+  if (DATA.live) return decList.map(d => ({ ...d, st: { status: d.status, until: d.until, reason: d.reason } }));
   return buildDecisions().map(d => ({ ...d, st: decState[d.id] || { status: 'new' } }))
     .concat([]).map(d => {
       if (d.st.status === 'postponed' && d.st.until && d.st.until <= isoD(0)) d.st = { status: 'new' };
@@ -697,11 +700,15 @@ function pDecisions() {
   const all = allDecisions(), tabs = [['new', 'Новые'], ['progress', 'В работе'], ['postponed', 'Отложены'], ['done', 'Выполнены'], ['rejected', 'Отклонены']];
   const list = all.filter(d => d.st.status === decTab);
   const total = all.filter(d => d.st.status === 'new').reduce((a, d) => a + d.effect, 0);
-  return `<h2 class="pt">Центр решений</h2><p class="sub">Решения, которые нужно принять сегодня. Сейчас работают встроенные правила; с ключом Claude API список составит ИИ.${DATA.live ? ' Правила строятся только по подключённым источникам.' : ' ' + demoTag}</p>
-  <div class="filters"><div class="stat">Потенциальный эффект новых <b class="up">${mln(total)}/мес</b></div><button class="btn pri" data-act="recalc" style="margin-left:auto">↻ Пересчитать сейчас</button></div>
+  const fdt = x => new Date(x).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+  const info = !DATA.live ? `Решения, которые нужно принять сегодня. В демо-режиме их составляют встроенные правила. ${demoTag}`
+    : `Решения на сегодня по всем подключённым данным. ${decRun ? `Последний разбор: ${fdt(decRun.at)}, ${decRun.source === 'ai' ? 'составил ИИ (Claude)' : 'встроенные правила'}.` : 'Разбора ещё не было.'} Утренний разбор — каждый день в ${DATA.decisionHour ?? 8}:00.${srv?.ai ? '' : ' Без ключа Claude работают встроенные правила.'}`;
+  return `<h2 class="pt">Центр решений</h2><p class="sub">${info}</p>
+  ${DATA.live && decRun?.error ? `<div class="card" style="margin-bottom:14px;border-color:rgba(255,176,32,.4)"><span class="warn">${esc(decRun.error)}</span></div>` : ''}
+  <div class="filters"><div class="stat">Потенциальный эффект новых <b class="up">${mln(total)}/мес</b></div><button class="btn pri" data-act="recalc" style="margin-left:auto" ${decRunning ? 'disabled' : ''}>${decRunning ? '⏳ Считаю…' : '↻ Пересчитать сейчас'}</button></div>
   <div class="tabs">${tabs.map(([k, n]) => `<button class="${decTab === k ? 'on' : ''}" data-act="dtab" data-t="${k}">${n} (${all.filter(d => d.st.status === k).length})</button>`).join('')}</div>
   <div class="grid">${list.map(d => `<div class="card dec"><h3><span class="tag ${URG[d.urg][1]}">${URG[d.urg][0]}</span><span class="tag t-gry">${d.dir}</span></h3>
-    <b style="font-size:16px">${esc(d.title)}</b>
+    <b style="font-size:16px">${esc(d.title)}</b>${d.source === 'ai' ? ' <span class="tag t-vio">✨ ИИ</span>' : ''}
     <p style="margin-top:6px">${esc(d.sit)}</p><p class="mut" style="margin-top:6px"><b>Почему:</b> ${esc(d.why)}</p>
     <ol class="steps">${d.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
     <div class="meta"><span class="tag t-grn">Эффект: ${d.effect ? '+' + mln(d.effect) + '/мес' : 'снижение рисков'}</span><span class="tag t-blu">Срок: ${fdate(d.due)}</span><span class="tag t-gry">Уверенность ${d.conf}%</span></div>
@@ -816,15 +823,18 @@ document.addEventListener('click', e => {
     case 'docRecog': recognizeDoc(id); break;
     case 'connect': { const s = DATA.sources.find(x => x.id === id); modal('Подключение: ' + s.name, `<p><b>Где взять ключ:</b> ${s.how}.</p><p class="mut" style="margin-top:10px">Ключи вписываются только в файл <code>.env</code> на сервере и никогда не попадают в браузер. ${(s.keys || []).length ? 'Скопируйте .env.example в .env, вставьте ключ и перезапустите сервер (npm start).' : 'Этот источник подключается на этапе 3.'}</p>${DATA.live ? '' : '<p class="warn" style="margin-top:10px">Сейчас страница открыта без сервера — работает демо-режим.</p>'}`); break; }
     case 'dtab': decTab = el.dataset.t; render(); break;
-    case 'recalc': render(); toast('Решения пересчитаны по текущим данным'); break;
+    case 'recalc': if (DATA.live) recalcDecisions(); else { render(); toast('Решения пересчитаны по текущим данным'); } break;
     case 'dAccept': {
+      if (DATA.live) { decAction(id, 'accept').then(d => d && (decTab = 'progress', render(), toast(`Создано задач: ${d.steps.length}`))); break; }
       const d = allDecisions().find(x => x.id === id);
       d.steps.forEach(s => tasks.push({ id: uid(), title: s, desc: d.title, status: 'todo', prio: d.urg === 'high' ? 'high' : d.urg === 'med' ? 'med' : 'low', due: d.due, who: DATA.team[0], ai: true, doc: '', decision: d.id }));
       decState[id] = { status: 'progress' }; saveAll(); decTab = 'progress'; render(); toast(`Создано задач: ${d.steps.length}`); break;
     }
-    case 'dPost': decState[id] = { status: 'postponed', until: isoD(3) }; saveAll(); render(); toast('Отложено на 3 дня'); break;
-    case 'dRej': modal('Отклонить решение', `<div class="fld"><label>Причина (ИИ учтёт её в следующий раз)</label><textarea class="f-in" id="m_reason" rows="3"></textarea></div>`, () => { decState[id] = { status: 'rejected', reason: $('#m_reason').value.trim() }; saveAll(); render(); }); break;
-    case 'dRestore': decState[id] = { status: 'new' }; saveAll(); render(); break;
+    case 'dPost': if (DATA.live) { decAction(id, 'postpone').then(d => d && toast('Отложено на 3 дня')); break; }
+      decState[id] = { status: 'postponed', until: isoD(3) }; saveAll(); render(); toast('Отложено на 3 дня'); break;
+    case 'dRej': modal('Отклонить решение', `<div class="fld"><label>Причина (ИИ учтёт её в следующий раз)</label><textarea class="f-in" id="m_reason" rows="3"></textarea></div>`, () => { const reason = $('#m_reason').value.trim(); if (DATA.live) { decAction(id, 'reject', { reason }).then(d => d && toast('Отклонено — ИИ учтёт причину')); return; } decState[id] = { status: 'rejected', reason }; saveAll(); render(); }); break;
+    case 'dRestore': if (DATA.live) { decAction(id, 'restore'); break; }
+      decState[id] = { status: 'new' }; saveAll(); render(); break;
     case 'dAsk': {
       const d = allDecisions().find(x => x.id === id);
       if (DATA.live && srv?.ai) { aiOpen(`Обсудим решение «${d.title}». Ситуация: ${d.sit} Предлагаемые шаги: ${d.steps.join('; ')}. Стоит ли так делать, какие риски и что проверить по данным?`); break; }
@@ -923,6 +933,23 @@ async function uploadDoc(f) {
     }
   } catch (e) { toast('Не загрузилось: ' + e.message); }
 }
+async function decAction(id, action, body) {
+  try {
+    const r = await api(`/api/decisions/${encodeURIComponent(id)}/${action}`, { method: 'POST', body: JSON.stringify(body || {}) });
+    decList = r.items; tasks = r.tasks; remember('tasks', tasks); render();
+    return r.item;
+  } catch (e) { toast('Не получилось: ' + e.message); return null; }
+}
+async function recalcDecisions() {
+  decRunning = true; render();
+  toast(srv?.ai ? 'ИИ разбирает данные — это займёт до пары минут…' : 'Пересчитываю по встроенным правилам…');
+  try {
+    const r = await api('/api/decisions/recalc', { method: 'POST' });
+    decList = r.items; decRun = r.run; decTab = 'new';
+    toast(r.run.error ? r.run.error : `Готово: новых решений — ${r.run.count}${r.run.source === 'ai' ? ' (составил ИИ)' : ''}`);
+  } catch (e) { toast('Не удалось пересчитать: ' + e.message); }
+  decRunning = false; render();
+}
 async function recognizeDoc(id) {
   closeModal(); toast('ИИ перечитывает документ…');
   try {
@@ -951,6 +978,7 @@ function applyLive(r) {
   DATA.demoBlocks = r.demo || {}; DATA.notes = r.notes || [];
   for (const k of LIVE_KEYS) if (r[k] !== undefined) DATA[k] = r[k];
   if (r.settings) DATA.settings = { ...DATA.settings, ...r.settings };
+  if (r.decisionHour != null) DATA.decisionHour = r.decisionHour;
   if (r.team) DATA.team = r.team;
   Object.assign(DATA.kpi, r.kpi || {});
   crmLive = !!r.crm;
@@ -960,19 +988,21 @@ function applyLive(r) {
 }
 // С сервером задачи, сделки и документы общие для всей команды; демо-примеры из браузера туда не попадают
 async function loadStore() {
-  for (const k of ['tasks', 'docs', 'decisions', 'deals']) {
+  for (const k of ['tasks', 'docs', 'deals']) {
     if (k === 'deals' && crmLive) continue;
-    const items = (await api('/api/store/' + k)).items ?? (k === 'decisions' ? {} : []);
-    if (k === 'tasks') tasks = items; else if (k === 'docs') docs = items; else if (k === 'decisions') decState = items; else deals = items;
+    const items = (await api('/api/store/' + k)).items ?? [];
+    if (k === 'tasks') tasks = items; else if (k === 'docs') docs = items; else deals = items;
     remember(k, items);
   }
+  const r = await api('/api/decisions');
+  decList = r.items; decRun = r.run; decRunning = r.running;
 }
 // Новые документы с почты и из Telegram и правки коллег подтягиваются раз в 30 секунд
 async function pollStore() {
   if (dragId || $('#mod') || Object.values(pushTimers).length && Date.now() - lastEdit < 2000) return;
-  const before = JSON.stringify(synced);
+  const before = JSON.stringify([synced, decList]);
   await loadStore();
-  if (JSON.stringify(synced) !== before) render();
+  if (JSON.stringify([synced, decList]) !== before) render();
 }
 async function refreshLive() {
   applyLive(await api('/api/dashboard'));

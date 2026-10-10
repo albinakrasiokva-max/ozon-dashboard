@@ -13,14 +13,15 @@ import { ingest, recognize, filePath } from './lib/docs.js';
 import { aiEnabled, chat } from './lib/ai.js';
 import { snapshotForAI } from './lib/snapshot.js';
 import { startTelegram } from './lib/telegram.js';
+import { runDecisions, maybeDailyRun, refreshStatuses, act, isRunning } from './lib/decisions.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 loadEnv(path.join(ROOT, '.env'));
 process.env.TZ ||= 'Europe/Moscow'; // дни считаются по Москве, если не задано иное
 process.chdir(ROOT); // settings.json и data/ — рядом с server.js
 
-const LISTS = ['tasks', 'docs', 'deals']; // массивы элементов с id
-const MAPS = ['decisions'];               // объект {id: состояние}
+const LISTS = ['tasks', 'docs', 'deals']; // массивы элементов с id; решения меняются только через /api/decisions
+const MAPS = [];
 const MAX_BODY = 5 * 1024 * 1024;
 const MAX_UPLOAD = 25 * 1024 * 1024;
 
@@ -49,6 +50,15 @@ function dashboard() {
   const db = getDb();
   return { ...buildDashboard({ raw: db.raw, enabled: enabledKeys(), settings: getSettings() }), lastSync: db.lastSync, syncing: isSyncing(), ai: aiEnabled() };
 }
+
+// Полная картина для Центра решений и ИИ-чата
+const build = {
+  settings: getSettings,
+  data() {
+    const db = getDb(), dash = dashboard();
+    return { dash, store: db.store, input: snapshotForAI(dash, db.store, sourceStatus()) };
+  }
+};
 
 // Элементы задач/сделок/документов меняются по одному — так правки разных людей не затирают друг друга
 function storeOp(name, id, method, body) {
@@ -132,6 +142,20 @@ async function handle(req, res) {
     return send(res, 200, r);
   }
 
+  // Центр решений
+  if (method === 'GET' && p === '/api/decisions') {
+    return send(res, 200, { items: refreshStatuses(), run: getDb().state.decisionsRun || null, running: isRunning(), ai: aiEnabled(), hour: getSettings().decisionHour });
+  }
+  if (method === 'POST' && p === '/api/decisions/recalc') {
+    const run = await runDecisions(build, { reason: 'manual' });
+    return send(res, 200, { items: refreshStatuses(), run });
+  }
+  if ((m = p.match(/^\/api\/decisions\/([\w-]{1,64})\/(accept|postpone|reject|restore)$/)) && method === 'POST') {
+    const body = m[2] === 'reject' ? await readBody(req) : {};
+    const d = act(m[1], m[2], body, getSettings());
+    return send(res, 200, { item: d, items: refreshStatuses(), tasks: getDb().store.tasks || [] });
+  }
+
   // ИИ-чат по живым данным
   if (method === 'POST' && p === '/api/chat') {
     if (!aiEnabled()) throw fail(409, 'Нет ключа Claude API — чат работает на встроенных правилах');
@@ -141,8 +165,7 @@ async function handle(req, res) {
       .slice(-20).map(x => ({ role: x.role, text: x.text.slice(0, 4000) }));
     while (history.length && history[0].role !== 'user') history.shift();
     if (!history.length || history[history.length - 1].role !== 'user') throw fail(400, 'Нет вопроса');
-    const db = getDb();
-    const snap = snapshotForAI(dashboard(), db.store, sourceStatus());
+    const snap = build.data().input;
     try {
       return send(res, 200, { text: await chat(history, snap) });
     } catch (e) {
@@ -193,9 +216,12 @@ server.listen(PORT, HOST, () => {
   console.log(on.length ? `Подключены: ${on.join(', ')}` : 'Ключей в .env нет — дашборд работает на демо-данных.');
   if (process.env.NO_SYNC === '1') return console.log('NO_SYNC=1 — синхронизация и бот отключены, показываются сохранённые данные.');
   const min = startScheduler(getSettings().syncMinutes);
+  // Утренний разбор: после первой синхронизации и дальше раз в минуту проверяем, не пора ли
+  const daily = () => { const r = maybeDailyRun(build); if (r) r.then(x => console.log(`Центр решений: ${x.count} новых (${x.source === 'ai' ? 'ИИ' : 'правила'})`)).catch(e => console.error('[decisions]', e.message)); };
   if (on.length) {
     console.log(`Синхронизация каждые ${min} мин.`);
-    syncAll().catch(() => {});
-  }
+    syncAll().catch(() => {}).finally(daily);
+  } else daily();
+  setInterval(daily, 60000).unref();
   startTelegram();
 });
