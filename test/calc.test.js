@@ -156,6 +156,10 @@ test('Аналитика Ozon: начисления, остатки и рекл�
   assert.equal(st.avgDaily, 2, '56 заказанных штук за 28 дней');
   assert.equal(st.daysLeft, 15);
 
+  const fromAcc = reports.filter(d => d.data.spendOnly);
+  assert.equal(fromAcc.length, 3, 'реклама из начислений — на случай, если нет ключей Performance');
+  assert.deepEqual(fromAcc[2].data.campaigns.map(c => [c.sku, c.tool, c.spend]), [[0, 'Услуга продвижения Оплата за клик', 500]], 'подписка Premium не входит — она учитывается отдельно');
+
   assert.equal(ads.length, 3);
   const c = ads[2].data.campaigns[0];
   assert.equal(c.sku, 555, 'кампания с одним товаром привязана к SKU');

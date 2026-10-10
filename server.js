@@ -72,7 +72,8 @@ function ozonReports() {
   return {
     seller: { on: seller.on, at: seller.at, error: seller.error },
     perf: { on: perf.on, at: perf.at, error: perf.error },
-    datasets: [...seller.datasets, ...perf.datasets],
+    // Реклама из начислений нужна, только если за этот месяц нет данных Ozon Performance
+    datasets: [...seller.datasets.filter(d => !(d.data?.spendOnly && perf.datasets.some(x => x.period?.from === d.period?.from))), ...perf.datasets],
     lastSync: db.lastSync, syncing: isSyncing()
   };
 }

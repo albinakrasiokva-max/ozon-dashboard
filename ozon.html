@@ -939,6 +939,7 @@ function buildModel(pk) {
   // --- реклама: прямые расходы по SKU и общие кампании «на все товары» ---
   M.campaigns = []; M.adsCat = { spend: 0, sales: 0, impr: 0, clicks: 0, carts: 0, orders: 0 }; M.sharedAds = 0;
   M.adsHasCarts = ads.some(d => d.data.hasCarts);
+  M.adsSpendOnly = ads.length > 0 && ads.every(d => d.data.spendOnly);   // реклама из начислений: только расход
   for (const d of ads) for (const c of d.data.campaigns) {
     M.campaigns.push(c);
     for (const k of Object.keys(M.adsCat)) M.adsCat[k] += c[k] || 0;
@@ -1615,7 +1616,7 @@ function renderAds() {
   el.innerHTML = `<div class="stack">
     <div class="grid2">
       <div class="panel"><div class="panel-head"><h2>Воронка каталога</h2><p>По рекламным кампаниям за период, включая кампании «на все товары». Ширина полос — в логарифмической шкале, иначе нижние этапы не видны.</p></div>
-        <div class="funnel">${funnel}</div>
+        ${M.adsSpendOnly ? stub('Реклама взята из начислений Ozon: там есть только расход — по видам продвижения и, для оплаты за заказ, по товарам. Показы, клики и заказы из рекламы Ozon отдаёт только через Ozon Performance API.') : `<div class="funnel">${funnel}</div>`}
         ${M.have.sales ? `<p class="small muted" style="margin-top:14px">Выкуплено по ${M.salesSrc === 'accruals' ? 'отчёту по начислениям' : 'отчёту о реализации'}: ${num(T.soldQty)} шт, возвращено ${num(T.soldQty - T.netQty)} шт, выкуп ${pct(T.soldQty ? T.netQty / T.soldQty : null)}.</p>` : ''}</div>
       <div class="panel"><div class="panel-head"><h2>Расход и эффективность</h2></div>
         <dl class="kv" style="font-size:15px"><dt>Расход на рекламу</dt><dd>${rub(C.spend)}</dd>
@@ -1627,7 +1628,7 @@ function renderAds() {
           <dt>Цена клика</dt><dd>${rub(C.clicks ? C.spend / C.clicks : null, 2)}</dd></dl>
         <p class="small muted" style="margin-top:10px">Расход кампаний «на все товары» распределён по товарам пропорционально их выручке.</p></div>
     </div>
-    <div class="panel"><div class="panel-head"><h2>Точки роста</h2><p>Товары, которые заметно отстают от медианы каталога. Потенциал = недополученные продажи при медианной конверсии × прибыль на единицу. Это ориентир для приоритизации, а не гарантированная сумма.</p></div>
+    ${M.adsSpendOnly ? '' : `<div class="panel"><div class="panel-head"><h2>Точки роста</h2><p>Товары, которые заметно отстают от медианы каталога. Потенциал = недополученные продажи при медианной конверсии × прибыль на единицу. Это ориентир для приоритизации, а не гарантированная сумма.</p></div>
       ${!G.enough ? stub('Для сравнения с медианой нужно минимум 3 товара с рекламными показами за период.') : ''}
       ${G.med.margin == null && G.enough ? stub('Прибыль на единицу не посчитана ни по одному товару, поэтому оценить потенциал нельзя. Заполните себестоимость и удержания.') : ''}
       ${G.signals.length ? table('growth', [
@@ -1637,10 +1638,10 @@ function renderAds() {
         { key: 'units', label: 'Доп. продажи, шт', num: 1, val: x => x.units, fmt: v => num(v) },
         { key: 'pot', label: 'Потенциал прибыли', num: 1, val: x => x.potential, fmt: v => ok(v) ? `<b class="pos">+${rub(v)}</b>` : '<span class="faint">нет данных</span>' }],
         G.signals, { sort: { key: 'pot', dir: -1 } }) : G.enough && G.med.margin != null ? stub('Отклонений от медианы при хорошей марже не найдено.') : ''}
-      ${G.enough ? `<p class="small faint" style="margin-top:10px">Медианы каталога: показ → корзина ${pct(G.med.i2c, 2)}, корзина → заказ ${pct(G.med.c2o)}, показов на товар ${num(G.med.impr)}, выкуп ${pct(G.med.buyout)}, маржа ${pct(G.med.margin)}.</p>` : ''}</div>
+      ${G.enough ? `<p class="small faint" style="margin-top:10px">Медианы каталога: показ → корзина ${pct(G.med.i2c, 2)}, корзина → заказ ${pct(G.med.c2o)}, показов на товар ${num(G.med.impr)}, выкуп ${pct(G.med.buyout)}, маржа ${pct(G.med.margin)}.</p>` : ''}</div>`}
     <div class="panel"><div class="panel-head"><h2>Кампании</h2></div>
       ${table('camps', [
-        { key: 'camp', label: 'Кампания', val: c => c.camp || '—', cell: c => `<td><div>${esc(c.camp && c.camp !== '0' ? c.camp : 'без ID')}</div><div class="small faint">${esc(c.tool)}${c.place ? ', ' + esc(c.place) : ''}</div></td>` },
+        { key: 'camp', label: 'Кампания', val: c => c.camp || '—', cell: c => `<td><div>${esc(c.camp && c.camp !== '0' ? c.camp : M.adsSpendOnly ? 'из начислений' : 'без ID')}</div><div class="small faint">${esc(c.tool)}${c.place ? ', ' + esc(c.place) : ''}</div></td>` },
         { key: 'name', label: 'Товар', val: c => c.sku ? c.name : 'Все товары', cell: c => `<td class="name"><div class="t">${c.sku ? esc(c.name) : '<b>Все товары</b>'}</div>${c.sku ? `<div class="a">SKU ${c.sku}</div>` : ''}</td>` },
         { key: 'spend', label: 'Расход', num: 1, val: c => c.spend, fmt: v => rub(v) },
         { key: 'sales', label: 'Продажи', num: 1, val: c => c.sales, fmt: v => rub(v) },
@@ -1952,7 +1953,7 @@ function apiPanel() {
   return `<div class="panel"><div class="panel-head"><h2>Подключение к Ozon</h2><p>Данные подтягиваются с сервера сами: при открытии страницы, раз в 10 минут и по кнопке «Обновить из Ozon». Сервер забирает их из Ozon по расписанию. Себестоимость в API нет — её по-прежнему задаёте вручную или файлом.</p></div>
     <ul class="small" style="margin:0;padding-left:18px;line-height:1.8">
       ${line('Ozon Seller API', S.api.seller, 'Впишите OZON_CLIENT_ID и OZON_API_KEY в .env на сервере (роль ключа — Admin read only). Даёт продажи, возвраты, удержания Ozon и остатки.')}
-      ${line('Ozon Performance API', S.api.perf, 'Впишите OZON_PERF_CLIENT_ID и OZON_PERF_CLIENT_SECRET. Даёт расход, показы и клики по кампаниям. Без него реклама берётся из начислений и делится на все товары.')}
+      ${line('Ozon Performance API', S.api.perf, 'Реклама берётся из начислений кабинета продавца: расход по видам продвижения и по товарам (оплата за заказ), без показов и кликов. Чтобы были показы, клики и кампании, впишите OZON_PERF_CLIENT_ID и OZON_PERF_CLIENT_SECRET из performance.ozon.ru.')}
     </ul>
     ${S.api.skipped.length ? `<p class="small warn" style="margin-top:10px">Вместо данных API используются загруженные файлы:<br>${S.api.skipped.map(esc).join('<br>')}<br>Удалите файл, чтобы данные за этот месяц шли из API.</p>` : ''}</div>`;
 }
