@@ -178,6 +178,17 @@ test('старый метод остатков отключён (404) — ост
   await syncAll();
 });
 
+test('итоги по финансам отключены (404) — считаются по списку операций', async () => {
+  installMock({ 'api-seller.ozon.ru/v3/finance/transaction/totals': 404 });
+  await syncAll();
+  assert.equal(sourceStatus().find(s => s.key === 'ozon').error, null);
+  const f = getDb().raw.ozon.finance[1];
+  assert.deepEqual({ ...f, month: undefined }, { month: undefined, accruals: 3000, commission: -450, logistics: -300, refunds: -1500, services: -1510, compensation: 0, other: 0, payout: -760 },
+    'к выплате = сумма всех операций месяца');
+  installMock();
+  await syncAll();
+});
+
 test('ошибка в начислениях не ломает основную синхронизацию Ozon', async () => {
   installMock({ 'api-seller.ozon.ru/v3/finance/transaction/list': 403 });
   await syncAll();
