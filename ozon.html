@@ -205,6 +205,7 @@ th.sticky-col{z-index:3;background:var(--raised)}
 <nav class="tabs" role="tablist" aria-label="Разделы">
   <button role="tab" data-tab="overview" aria-selected="true">Обзор</button>
   <button role="tab" data-tab="plan">План-факт</button>
+  <button role="tab" data-tab="finance">Финансы и закупки</button>
   <button role="tab" data-tab="units">Юнит-экономика</button>
   <button role="tab" data-tab="products">Товары</button>
   <button role="tab" data-tab="ads">Реклама и воронка</button>
@@ -214,6 +215,7 @@ th.sticky-col{z-index:3;background:var(--raised)}
 <main>
   <section class="tab" id="tab-overview" role="tabpanel"></section>
   <section class="tab" id="tab-plan" role="tabpanel" hidden></section>
+  <section class="tab" id="tab-finance" role="tabpanel" hidden></section>
   <section class="tab" id="tab-units" role="tabpanel" hidden></section>
   <section class="tab" id="tab-products" role="tabpanel" hidden></section>
   <section class="tab" id="tab-ads" role="tabpanel" hidden></section>
@@ -301,13 +303,15 @@ const LS = {
 };
 const DEFAULT_SETTINGS = {
   stockCrit: 7, stockWarn: 14, supplyDays: 30,       // пороги остатков и горизонт поставки, дней
+  minLot: 300,                                        // партия поставки одного товара: не меньше и кратно, шт
+  otherCosts: [],                                     // другие расходы в месяц: [{name, v}]
   drrLow: 7, drrHigh: 15,                             // ориентир ДРР, %
   rates: { configured: false, commission: null, acquiring: null, logistics: null, storage: null, other: null, tax: null },
   catCommission: {}                                   // комиссия по категории, % (перекрывает общую)
 };
 function loadSettings() {
   const s = LS.get('settings', {});
-  return { ...DEFAULT_SETTINGS, ...s, rates: { ...DEFAULT_SETTINGS.rates, ...(s.rates || {}) }, catCommission: { ...(s.catCommission || {}) } };
+  return { ...DEFAULT_SETTINGS, ...s, otherCosts: Array.isArray(s.otherCosts) ? s.otherCosts : [], rates: { ...DEFAULT_SETTINGS.rates, ...(s.rates || {}) }, catCommission: { ...(s.catCommission || {}) } };
 }
 const S = {
   datasets: LS.get('datasets', []),     // загруженные отчёты (уже разобранные и свёрнутые по SKU)
@@ -1110,16 +1114,20 @@ function computeStock(M, items) {
   }
   return res;
 }
+/** Сколько заказать: потребность, округлённая вверх до кратного партии (не меньше одной партии). */
+function lotQty(need) { const lot = Math.ceil(+S.settings.minLot || 0); return need <= 0 ? 0 : lot > 0 ? Math.ceil(need / lot) * lot : need; }
 function supplyAdvice(s) {
   const st = s.stock, T = S.settings.supplyDays;
   if (st.vel == null) return { text: 'Нет данных о скорости продаж', level: 'gray' };
   if (st.vel <= 0) return st.available > 0 ? { text: 'Продаж нет — поставка не нужна', level: 'gray' } : { text: 'Нет ни остатка, ни продаж', level: 'gray' };
   const need = Math.max(0, Math.ceil(st.vel * T - st.available - st.inbound));
+  const lot = lotQty(need);
+  const lotTxt = lot > need ? `${num(lot)} шт — кратно партии ${num(S.settings.minLot)} шт (на ${T} дн. продаж нужно около ${num(need)} шт)` : `${num(lot)} шт на ${T} дн. продаж`;
   const grp = s.abcProfit || s.abcRevenue;
   if (st.days < S.settings.stockWarn) {
-    if (grp === 'C') return { text: `Остатка мало, но товар в группе C${s.abcProfit ? ' по прибыли' : ' по выручке'} — пополняйте, только если он нужен в ассортименте (${need} шт на ${T} дн.)`, level: 'warn' };
+    if (grp === 'C') return { text: `Остатка мало, но товар в группе C${s.abcProfit ? ' по прибыли' : ' по выручке'} — пополняйте, только если он нужен в ассортименте (${lotTxt})`, level: 'warn', need, lot };
     if (need === 0) return { text: `Остатка мало, но поставки в пути (${st.inbound} шт) покрывают ${T} дн. продаж`, level: 'acc' };
-    return { text: `Пора поставлять: около ${need} шт на ${T} дн. продаж${st.inbound ? ` (с учётом ${st.inbound} шт в пути)` : ''}`, level: 'neg' };
+    return { text: `Пора поставлять: ${lotTxt}${st.inbound ? `, с учётом ${st.inbound} шт в пути` : ''}`, level: 'neg', need, lot };
   }
   if (st.days > 60) return { text: 'Запаса больше чем на 60 дней — новая поставка не нужна', level: 'gray' };
   return { text: 'Запаса достаточно', level: 'pos' };
@@ -1457,6 +1465,141 @@ function renderPlan() {
 }
 
 /* =====================================================================
+   8а. ВКЛАДКА «ФИНАНСЫ И ЗАКУПКИ»
+   Деньги за период (доходы → Ozon → реклама → налог → себестоимость),
+   налоги по кварталам, бюджет на закупку рекомендованных к поставке товаров
+   (не меньше минимальной партии) и остаток на другие расходы.
+   ===================================================================== */
+/** Денежный итог модели: по всем товарам с продажами, а не только с известной себестоимостью. */
+function moneyOf(M) {
+  const list = M.skus;
+  const F = {
+    income: sum(list, s => s.net), fees: sum(list, s => s.feesTotal || 0), ads: sum(list, s => s.ads.total), tax: sum(list, s => s.tax || 0),
+    cogs: sum(list.filter(s => s.cogs != null), s => s.cogs),
+    noCost: list.filter(s => s.hasSales && s.cogs == null), noFees: list.filter(s => s.hasSales && s.feeSrc === 'none')
+  };
+  F.afterOzon = F.income - F.fees - F.ads;     // примерно столько Ozon перечисляет, за вычетом рекламы
+  F.afterTax = F.afterOzon - F.tax;            // остаётся после налога
+  F.profit = F.afterTax - F.cogs;              // чистая прибыль
+  F.noCostNet = sum(F.noCost, s => s.net);
+  return F;
+}
+/** Закупка: товары, которым пора поставку, количество не меньше минимальной партии. */
+function purchasePlan(M) {
+  const rows = (M.stock || []).filter(s => s.stock.advice.lot > 0).map(s => {
+    const a = s.stock.advice, c = s.cost.v;
+    return { s, need: a.need, lot: a.lot, must: a.level === 'neg', cost: c, total: c != null ? c * a.lot : null, lasts: s.stock.vel > 0 ? Math.floor((s.stock.available + s.stock.inbound + a.lot) / s.stock.vel) : null };
+  });
+  const must = rows.filter(r => r.must), opt = rows.filter(r => !r.must);
+  return { rows, must, opt, total: sum(must, r => r.total || 0), qty: sum(must, r => r.lot), optTotal: sum(opt, r => r.total || 0), noCost: must.filter(r => r.cost == null) };
+}
+function renderFinance() {
+  const M = S.model, el = $('#tab-finance'), set = S.settings;
+  if (!M.have.any) { el.innerHTML = emptyState(); return; }
+  const F = moneyOf(M), P = purchasePlan(M);
+  const curKey = todayISO().slice(0, 7);
+  const months = periodKeys().map(k => { const MM = buildModel(k); return { k, M: MM, F: moneyOf(MM) }; }).filter(m => m.M.have.sales);
+  const full = months.filter(m => m.k < curKey).slice(-3);
+  const base = full.length ? full : months.slice(-1);
+  const avgIn = base.length ? sum(base, m => m.F.afterTax) / base.length : null;
+  const other = sum(set.otherCosts, c => +c.v || 0);
+  const left = avgIn != null ? avgIn - P.total - other : null;
+  const periodName = S.period === 'all' ? 'все загруженные месяцы' : monthLabel(S.period).toLowerCase();
+  const taxRate = set.rates.tax;
+
+  // --- 1. Деньги за период ---
+  const line = (lbl, v, cls = '', note = '') => `<tr><td>${lbl}${note ? `<div class="small muted">${note}</div>` : ''}</td><td class="num ${cls}">${v}</td></tr>`;
+  const warn = [];
+  if (F.noCost.length) warn.push(`Без себестоимости: ${nTov(F.noCost.length)} с выручкой ${rub(F.noCostNet)} — по ним себестоимость не вычтена, прибыль завышена. <button class="linkbtn" data-goto-tab="units">Заполнить</button>`);
+  if (F.noFees.length) warn.push(`Без удержаний Ozon: ${nTov(F.noFees.length)} — <button class="linkbtn" data-goto-tab="data">задайте ставки</button>.`);
+  if (!M.taxSet) warn.push('Ставка налога не задана — налог не вычтен. <button class="linkbtn" data-goto-tab="data">Задать ставку</button>');
+  const moneyPanel = `<div class="panel"><div class="panel-head"><h2>Деньги за период</h2><p>${esc(periodName[0].toUpperCase() + periodName.slice(1))}. Доходы — как в «Финансы → Документы» Ozon.</p></div>
+    <div class="grid2"><div class="tbl"><table><tbody>
+      ${line('Доходы', rub(F.income), '', 'реализация минус возвраты, выкупы и компенсации')}
+      ${line('− Удержания Ozon', rub(-F.fees), 'neg', 'комиссия за вычетом баллов, логистика, эквайринг, хранение, прочее')}
+      ${line('− Реклама', rub(-F.ads), 'neg')}
+      ${line('= Перечисляет Ozon', rub(F.afterOzon), '', 'примерно, за вычетом рекламы')}
+      ${line('− Налог', M.taxSet ? rub(-F.tax) : '—', 'neg', M.taxSet ? `${num(taxRate, taxRate % 1 ? 1 : 0)}% от доходов` : '')}
+      ${line('= Остаётся после налога', `<b>${rub(F.afterTax)}</b>`)}
+      ${line('− Себестоимость проданного', rub(-F.cogs), 'neg')}
+      ${line('<b>= Чистая прибыль</b>', `<b class="${F.profit < 0 ? 'neg' : 'pos'}">${rub(F.profit)}</b>`, '', F.income > 0 ? `рентабельность ${pct(F.profit / F.income)} от доходов` : '')}
+    </tbody></table></div>
+    <div>${warn.length ? `<ol class="insights">${warn.map(w => `<li class="warn"><span>${w}</span></li>`).join('')}</ol>` : stub('Все товары с продажами имеют себестоимость и удержания — цифры полные.')}</div></div></div>`;
+
+  // --- 2. По месяцам ---
+  const byMonth = months.length ? `<div class="panel"><div class="panel-head"><h2>По месяцам</h2></div>${table('finMonths', [
+      { key: 'k', label: 'Месяц', val: m => m.k, fmt: v => monthLabel(v) },
+      { key: 'inc', label: 'Доходы', num: 1, val: m => m.F.income, fmt: v => rub(v) },
+      { key: 'fees', label: 'Ozon', num: 1, val: m => m.F.fees, fmt: v => rub(v) },
+      { key: 'ads', label: 'Реклама', num: 1, val: m => m.F.ads, fmt: v => rub(v) },
+      { key: 'tax', label: 'Налог', num: 1, val: m => m.M.taxSet ? m.F.tax : null, fmt: v => rub(v) },
+      { key: 'at', label: 'После налога', num: 1, val: m => m.F.afterTax, fmt: v => rub(v) },
+      { key: 'cogs', label: 'Себестоимость', num: 1, val: m => m.F.cogs, fmt: (v, m) => rub(v) + (m.F.noCost.length ? ' <span class="pill warn" title="Есть товары без себестоимости">неполная</span>' : '') },
+      { key: 'pr', label: 'Чистая прибыль', num: 1, val: m => m.F.profit, fmt: v => signed(v) },
+      { key: 'mg', label: 'Рентаб.', num: 1, val: m => m.F.income > 0 ? m.F.profit / m.F.income : null, fmt: v => pct(v) }],
+      months, { sort: { key: 'k', dir: 1 }, foot: `<td>Итого</td><td class="num">${rub(sum(months, m => m.F.income))}</td><td class="num">${rub(sum(months, m => m.F.fees))}</td><td class="num">${rub(sum(months, m => m.F.ads))}</td><td class="num">${M.taxSet ? rub(sum(months, m => m.F.tax)) : '—'}</td><td class="num">${rub(sum(months, m => m.F.afterTax))}</td><td class="num">${rub(sum(months, m => m.F.cogs))}</td><td class="num">${signed(sum(months, m => m.F.profit))}</td><td></td>` })}</div>` : '';
+
+  // --- 3. Налоги по кварталам ---
+  const qs = {};
+  for (const m of months) { const [y, mm] = m.k.split('-').map(Number), q = `${y}-${Math.ceil(mm / 3)}`; (qs[q] ||= { y, q: Math.ceil(mm / 3), base: 0, tax: 0, n: 0 }); qs[q].base += sum(m.M.skus, s => s.taxBase || 0); qs[q].tax += m.F.tax; qs[q].n++; }
+  const due = (y, q) => q < 4 ? `до 28 ${['апреля', 'июля', 'октября'][q - 1]} ${y}` : `по итогам года: ИП — до 28 апреля ${y + 1}, ООО — до 28 марта ${y + 1}`;
+  const taxes = `<div class="panel"><div class="panel-head"><h2>Налоги</h2><p>Ozon налог не удерживает — его платите вы. Авансы по УСН — по итогам каждого квартала.</p></div>
+    ${!M.taxSet ? stub('Задайте ставку налога во вкладке <button class="linkbtn" data-goto-tab="data">«Данные и настройки»</button> (например, 6% для УСН «Доходы»).') : `<div class="bigpair" style="margin-bottom:14px"><div><div class="small muted">Налог за ${esc(periodName)}</div><div class="v">${rub(F.tax)}</div></div><div><div class="small muted">Ставка</div><div class="v">${num(taxRate, taxRate % 1 ? 1 : 0)}%</div></div></div>
+    ${table('finTax', [
+      { key: 'q', label: 'Квартал', val: r => r.y * 10 + r.q, fmt: (v, r) => `${r.q} квартал ${r.y}${r.n < 3 ? ` <span class="small muted">(${r.n} из 3 мес.)</span>` : ''}` },
+      { key: 'b', label: 'Доходы', num: 1, val: r => r.base, fmt: v => rub(v) },
+      { key: 't', label: 'Налог', num: 1, val: r => r.tax, fmt: v => rub(v) },
+      { key: 'd', label: 'Срок уплаты', val: r => r.y * 10 + r.q, fmt: (v, r) => due(r.y, r.q) }],
+      Object.values(qs), { sort: { key: 'q', dir: 1 } })}
+    <p class="small muted" style="margin-top:10px">ИП на УСН «Доходы» может уменьшить налог на страховые взносы — здесь это не учтено, сверяйте сумму с бухгалтерией.</p>`}</div>`;
+
+  // --- 4. Закупка ---
+  const form = `<div class="form-row">
+      <label>Партия (минимум и кратность), шт<input type="number" min="0" id="minLot" value="${set.minLot}"></label>
+      <label>Закупку считать на, дн.<input type="number" min="7" id="finSupply" value="${set.supplyDays}"></label></div>`;
+  const pcols = [
+    { key: 'name', label: 'Товар', sticky: 1, val: r => r.s.name, cell: r => nameCell(r.s) },
+    { key: 'avail', label: 'Остаток + в пути', num: 1, val: r => r.s.stock.available + r.s.stock.inbound, fmt: v => num(v) },
+    { key: 'vel', label: 'Продаж в день', num: 1, val: r => r.s.stock.vel, fmt: v => num(v, 2) },
+    { key: 'days', label: 'Хватит, дн.', num: 1, val: r => r.s.stock.days, fmt: v => ok(v) ? num(v) : '—' },
+    { key: 'need', label: `Нужно на ${set.supplyDays} дн.`, num: 1, val: r => r.need, fmt: v => num(v) },
+    { key: 'lot', label: 'Заказать, шт', num: 1, val: r => r.lot, fmt: (v, r) => `<b>${num(v)}</b>` },
+    { key: 'cost', label: 'Себестоимость, шт', num: 1, val: r => r.cost, cell: r => `<td class="num">${r.cost != null ? rub(r.cost) : costLink(r.s.sku)}</td>` },
+    { key: 'total', label: 'Сумма', num: 1, val: r => r.total, fmt: v => v != null ? `<b>${rub(v)}</b>` : '—' },
+    { key: 'lasts', label: 'Запаса хватит, дн.', num: 1, title: 'На сколько дней хватит остатка вместе с поставкой при текущей скорости продаж', val: r => r.lasts, fmt: v => ok(v) ? num(v) : '—' }];
+  const buy = `<div class="panel"><div class="panel-head"><h2>Закупка товара</h2><p>Товары, которым пора поставка (остатка меньше чем на ${set.stockWarn} дн.). Количество = продажи в день × ${set.supplyDays} дн. − остаток − в пути, округлённое вверх до кратного ${num(set.minLot)} шт (не меньше одной партии). Сумма — по себестоимости.</p></div>
+    ${form}<div style="margin-top:14px">
+    ${!M.have.stock ? stub('Нет данных об остатках — закупку посчитать не из чего.') : !P.must.length ? stub('Сейчас поставка не нужна ни одному товару из групп A и B.') : `
+      <div class="bigpair" style="margin-bottom:14px"><div><div class="small muted">Закупка: ${nTov(P.must.length)}, ${num(P.qty)} шт</div><div class="v">${rub(P.total)}</div></div>
+        <div><div class="small muted">${P.noCost.length ? 'Без себестоимости — не в сумме' : 'Себестоимость'}</div><div class="v ${P.noCost.length ? 'warn' : 'pos'}">${P.noCost.length ? nTov(P.noCost.length) : 'известна у всех'}</div></div></div>
+      ${table('finBuy', pcols, P.must, { sort: { key: 'total', dir: -1 } })}`}
+    ${P.opt.length ? `<details style="margin-top:14px"><summary class="small muted">Ещё ${nTov(P.opt.length)} группы C с малым остатком — по желанию, в сумму не входят${P.optTotal ? ` (${rub(P.optTotal)})` : ''}</summary><div style="margin-top:10px">${table('finBuyOpt', pcols, P.opt, { sort: { key: 'total', dir: -1 } })}</div></details>` : ''}
+    </div></div>`;
+
+  // --- 5. Бюджет ---
+  const ocRows = set.otherCosts.map((c, i) => `<tr><td><input type="text" data-oc="${i}" data-f="name" value="${esc(c.name)}" placeholder="Например, упаковка или зарплата" style="width:100%;min-width:180px"></td><td class="num"><input type="number" min="0" step="100" data-oc="${i}" data-f="v" value="${c.v ?? ''}" style="width:120px"></td><td><button class="btn small danger" data-oc-del="${i}" aria-label="Удалить">×</button></td></tr>`).join('');
+  const baseName = base.map(m => monthLabel(m.k).toLowerCase()).join(', ');
+  const verdict = left == null ? stub('Нет данных о продажах ни за один месяц.')
+    : `<p style="margin-top:12px">${left >= 0
+      ? `<span class="pill pos">хватает</span> После закупки и других расходов остаётся <b>${rub(left)}</b> в месяц.`
+      : `<span class="pill neg">не хватает</span> Денег от Ozon за месяц не хватает на закупку и другие расходы: нужно ещё <b>${rub(-left)}</b>. Можно растянуть закупку на 2 месяца, начать с товаров группы A или взять меньше позиций.`}</p>`;
+  const budget = `<div class="panel"><div class="panel-head"><h2>Бюджет</h2><p>Хватит ли денег от Ozon на закупку и остальные расходы. Приход — в среднем за ${base.length > 1 ? `${base.length} последних полных месяца` : 'месяц'} (${esc(baseName || '—')}).</p></div>
+    <div class="grid2"><div class="tbl"><table><tbody>
+      ${line('Приходит в месяц', avgIn != null ? rub(avgIn) : '—', '', 'доходы минус удержания Ozon, реклама и налог')}
+      ${line('− Закупка товара', rub(-P.total), 'neg', P.must.length ? `${num(P.qty)} шт${P.noCost.length ? `; без себестоимости и не в сумме: ${nTov(P.noCost.length)}` : ''}` : 'сейчас не нужна')}
+      ${line('− Другие расходы', rub(-other), 'neg', set.otherCosts.length ? 'в месяц, из списка справа' : 'добавьте справа')}
+      ${line('<b>= Остаётся</b>', left != null ? `<b class="${left < 0 ? 'neg' : 'pos'}">${rub(left)}</b>` : '—')}
+    </tbody></table>${verdict}</div>
+    <div><h3>Другие расходы в месяц</h3><p class="small muted">Всё, что платите не через Ozon: упаковка, фулфилмент, зарплата, аренда, сервисы. Сохраняется в этом браузере.</p>
+      <div class="tbl" style="margin-top:8px"><table><thead><tr><th>Статья</th><th class="num">₽ в месяц</th><th></th></tr></thead><tbody>${ocRows || '<tr><td colspan="3" class="muted">Пока пусто</td></tr>'}</tbody>
+      ${set.otherCosts.length ? `<tfoot><tr><td>Итого</td><td class="num">${rub(other)}</td><td></td></tr></tfoot>` : ''}</table></div>
+      <button class="btn small" id="ocAdd" style="margin-top:10px">Добавить расход</button></div></div>
+    <p class="small muted" style="margin-top:12px">Ozon перечисляет деньги с задержкой, а закупка нужна заранее — держите запас. Из-за округления до кратного ${num(set.minLot)} шт товара часто хватает дольше, чем на ${set.supplyDays} дн., поэтому по таким товарам следующая закупка понадобится реже (см. «Запаса хватит, дн.»).</p></div>`;
+
+  el.innerHTML = `<div class="stack">${budget}${buy}${moneyPanel}${byMonth}${taxes}</div>`;
+}
+
+/* =====================================================================
    9. ВКЛАДКА «ЮНИТ-ЭКОНОМИКА»
    Цепочка на одну проданную единицу: цена → минус статьи → прибыль/шт.
    ===================================================================== */
@@ -1694,7 +1837,7 @@ function renderStock() {
       <div class="panel"><div class="panel-head"><h2>Ближе всего к обнулению</h2></div>
         ${soon.length ? `<ol class="insights">${soon.map(s => `<li class="${s.stock.status === 'crit' ? 'neg' : s.stock.status === 'warn' ? 'warn' : 'pos'}"><span><span style="display:flex;justify-content:space-between;gap:12px"><span>${esc(short(s.name, 50))}</span><b style="white-space:nowrap">${s.stock.days} дн.</b></span><span class="small muted">арт. ${esc(s.article || '—')}, ${num(s.stock.available)} шт, обнулится ~${isoToRu(s.stock.runOut)}</span></span></li>`).join('')}</ol>` : stub('Нет товаров с продажами.')}</div>
     </div>
-    <div class="panel"><div class="panel-head"><h2>Планирование поставок</h2><p>Правило: если остатка хватит меньше чем на ${set.stockWarn} дн. и товар не в группе C по прибыли (или по выручке, если прибыль не посчитана) — пора поставлять. Объём = скорость × ${set.supplyDays} дн. − остаток − товары в пути.</p></div>
+    <div class="panel"><div class="panel-head"><h2>Планирование поставок</h2><p>Правило: если остатка хватит меньше чем на ${set.stockWarn} дн. и товар не в группе C по прибыли (или по выручке, если прибыль не посчитана) — пора поставлять. Объём = скорость × ${set.supplyDays} дн. − остаток − товары в пути, округлённое вверх до кратного ${num(set.minLot)} шт (минимальная партия). Сумма закупки — во вкладке <button class="linkbtn" data-goto-tab="finance">«Финансы и закупки»</button>.</p></div>
       ${table('stock', [
         { key: 'name', label: 'Товар', sticky: 1, val: s => s.name, cell: nameCell },
         { key: 'avail', label: 'Остаток, шт', num: 1, val: s => s.stock.available, fmt: v => num(v) },
@@ -1760,7 +1903,7 @@ function renderData() {
    Любое изменение данных (загрузка, себестоимость, настройки) вызывает
    recomputeAll(): модель строится заново, перерисовываются KPI и активная вкладка.
    ===================================================================== */
-const RENDER = { overview: renderOverview, plan: renderPlan, units: renderUnits, products: renderProducts, ads: renderAds, stock: renderStock, data: renderData };
+const RENDER = { overview: renderOverview, plan: renderPlan, finance: renderFinance, units: renderUnits, products: renderProducts, ads: renderAds, stock: renderStock, data: renderData };
 function recomputeAll() {
   try { S.model = buildModel(S.period); }
   catch (e) { console.error(e); toast('Ошибка расчёта: ' + e.message, 'err'); return; }
@@ -1813,6 +1956,8 @@ document.addEventListener('click', e => {
   const gc = t.closest('[data-goto-cost]');
   if (gc) { e.stopPropagation(); goTab('units'); const inp = document.getElementById('cost-' + gc.dataset.gotoCost); if (inp) { inp.scrollIntoView({ block: 'center' }); inp.focus(); } return; }
   const rc = t.closest('[data-reset-cost]'); if (rc) { delete S.costs[rc.dataset.resetCost]; save.costs(); return recomputeAll(); }
+  if (t.closest('#ocAdd')) { S.settings.otherCosts.push({ name: '', v: null }); save.settings(); renderFinance(); const inp = $$('[data-oc][data-f="name"]').pop(); if (inp) inp.focus(); return; }
+  const ocd = t.closest('[data-oc-del]'); if (ocd) { S.settings.otherCosts.splice(+ocd.dataset.ocDel, 1); save.settings(); return renderFinance(); }
   const pm = t.closest('[data-plan-month]'); if (pm) { S.plan.month = pm.dataset.planMonth; save.plan(); return renderPlan(); }
   const dsn = t.closest('[data-del-snap]'); if (dsn) { S.snapshots = S.snapshots.filter(s => s.ts !== dsn.dataset.delSnap); save.snapshots(); return renderOverview(); }
   const dd = t.closest('[data-del-ds]');
@@ -1822,7 +1967,7 @@ document.addEventListener('click', e => {
   if (ex) { const k = +ex.dataset.expand; S.ui.expanded.has(k) ? S.ui.expanded.delete(k) : S.ui.expanded.add(k); renderProductsTable(); }
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && e.target.matches('input[data-cost],input[data-cat],input[data-rate]')) e.target.blur();
+  if (e.key === 'Enter' && e.target.matches('input[data-cost],input[data-cat],input[data-rate],input[data-oc]')) e.target.blur();
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-expand]')) { e.preventDefault(); e.target.click(); }
   if (e.key === 'Enter' && e.target.matches('label.btn')) e.target.click();
 });
@@ -1833,12 +1978,17 @@ document.addEventListener('change', e => {
   if (t.dataset.cost) return setCost(+t.dataset.cost, t.value.trim());
   if (t.dataset.cat) { const v = t.value.trim(); if (v) S.categories[t.dataset.cat] = v; else delete S.categories[t.dataset.cat]; save.categories(); return recomputeAll(); }
   if (t.dataset.catcomm !== undefined) { const v = parseNum(t.value); if (v == null) delete S.settings.catCommission[t.dataset.catcomm]; else S.settings.catCommission[t.dataset.catcomm] = v; save.settings(); return recomputeAll(); }
-  if (['thCrit', 'thWarn', 'thSupply', 'drrLow', 'drrHigh'].includes(t.id)) {
+  if (['thCrit', 'thWarn', 'thSupply', 'drrLow', 'drrHigh', 'minLot', 'finSupply'].includes(t.id)) {
     const v = parseNum(t.value); if (v == null || v < 0) return toast('Введите число', 'err');
-    const key = { thCrit: 'stockCrit', thWarn: 'stockWarn', thSupply: 'supplyDays', drrLow: 'drrLow', drrHigh: 'drrHigh' }[t.id];
+    const key = { thCrit: 'stockCrit', thWarn: 'stockWarn', thSupply: 'supplyDays', drrLow: 'drrLow', drrHigh: 'drrHigh', minLot: 'minLot', finSupply: 'supplyDays' }[t.id];
     S.settings[key] = v;
     if (S.settings.stockWarn < S.settings.stockCrit) { S.settings.stockWarn = S.settings.stockCrit; toast('Порог «внимание» не может быть меньше критичного — выровнял', ''); }
     save.settings(); return recomputeAll();
+  }
+  if (t.dataset.oc !== undefined) {   // другие расходы в месяц
+    const i = +t.dataset.oc, row = S.settings.otherCosts[i]; if (!row) return;
+    if (t.dataset.f === 'v') row.v = parseNum(t.value); else row.name = t.value.trim();
+    save.settings(); return renderFinance();
   }
   if (t.dataset.planCat) { const c = t.dataset.planCat; S.plan.cats ||= {}; S.plan.cats[c] ||= {}; S.plan.cats[c][t.dataset.f] = parseNum(t.value); save.plan(); return renderPlan(); }
   if (t.id === 'uCat' || t.id === 'uSrc') { S.ui.filters.units[t.id === 'uCat' ? 'cat' : 'src'] = t.value; return renderUnitsTable(); }
