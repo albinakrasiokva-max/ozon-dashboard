@@ -1,0 +1,1970 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Аналитика магазина на Ozon</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- Библиотеки: SheetJS (чтение Excel) и Chart.js (графики). При недоступности cdnjs — запасной jsDelivr. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"
+        onerror="this.remove();var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';document.head.appendChild(s)"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"
+        onerror="this.remove();var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js';document.head.appendChild(s)"></script>
+<style>
+:root{
+  --bg:#17151F; --surface:#201D2A; --raised:#2A2636; --line:#383347; --line-soft:#2C2839;
+  --text:#EEEAF4; --muted:#A49EB4; --faint:#716A84;
+  --accent:#9AA8FF; --accent-soft:rgba(154,168,255,.14);
+  --pos:#5CC9A7; --pos-soft:rgba(92,201,167,.14);
+  --warn:#E8B04B; --warn-soft:rgba(232,176,75,.14);
+  --neg:#EE7B6B; --neg-soft:rgba(238,123,107,.14);
+  --r-lg:14px; --r-md:9px; --r-sm:5px;
+  --font:"Onest", "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+*{box-sizing:border-box}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:calc(env(safe-area-inset-top,0px) + 56px);color-scheme:dark}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 var(--font);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-.01em}
+h2{font-size:19px;line-height:1.3}
+h3{font-size:16px}
+h4{font-size:14px;color:var(--muted);font-weight:500}
+p{margin:0}
+a{color:var(--accent)}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.muted{color:var(--muted)} .faint{color:var(--faint)} .small{font-size:13px} .pos{color:var(--pos)} .neg{color:var(--neg)} .warn{color:var(--warn)}
+.num{text-align:right;white-space:nowrap}
+
+/* ---------- шапка ---------- */
+.top{display:flex;flex-wrap:wrap;gap:16px 24px;align-items:flex-end;justify-content:space-between;padding:22px clamp(16px,3vw,36px) 14px}
+.brand h1{font-size:24px;font-weight:700;letter-spacing:-.02em}
+.brand .sub{color:var(--muted);font-size:13px;margin-top:2px}
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.period{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px}
+select,input[type=number],input[type=text],input[type=search],input[type=month]{background:var(--raised);border:1px solid var(--line);border-radius:var(--r-sm);padding:7px 10px;min-height:36px}
+input[type=number]{width:110px}
+.btn{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:8px 16px;border:1px solid var(--line);background:transparent;cursor:pointer;font-weight:500;min-height:36px;white-space:nowrap}
+.btn:hover{background:var(--raised)}
+.btn.primary{background:var(--accent);color:#16142A;border-color:var(--accent)}
+.btn.primary:hover{background:#B3BDFF}
+.btn.small{padding:4px 12px;min-height:30px;font-size:13px}
+.btn.danger{border-color:var(--neg);color:var(--neg)}
+.linkbtn{background:none;border:0;padding:0;color:var(--accent);cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+
+/* ---------- KPI-строка ---------- */
+.kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin:0 clamp(16px,3vw,36px);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.kpi .k{padding:14px 16px 14px 0;border-right:1px solid var(--line-soft);padding-left:16px}
+.kpi .k:first-child{padding-left:0}
+.kpi .k:last-child{border-right:0}
+.kpi .lbl{font-size:13px;color:var(--muted)}
+.kpi .val{font-size:25px;font-weight:600;letter-spacing:-.02em;line-height:1.25;margin-top:2px}
+.kpi .note{font-size:12.5px;color:var(--muted);margin-top:4px;line-height:1.4}
+.cover{display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--line);margin-top:8px}
+.cover span{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:12px;color:var(--muted);margin-top:5px}
+.legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:0}
+.pill{display:inline-block;border-radius:999px;padding:1px 9px;font-size:12px;font-weight:500;white-space:nowrap}
+.pill.pos{background:var(--pos-soft);color:var(--pos)} .pill.neg{background:var(--neg-soft);color:var(--neg)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)} .pill.acc{background:var(--accent-soft);color:var(--accent)} .pill.gray{background:var(--raised);color:var(--muted)}
+
+/* ---------- вкладки ---------- */
+.tabs{position:sticky;top:0;z-index:20;background:var(--bg);display:flex;gap:4px;overflow-x:auto;padding:0 clamp(16px,3vw,36px);border-bottom:1px solid var(--line);scrollbar-width:none;padding-top:env(safe-area-inset-top,0px)}
+.tabs button{background:none;border:0;border-bottom:2px solid transparent;padding:13px 12px 11px;color:var(--muted);cursor:pointer;white-space:nowrap;font-weight:500}
+.tabs button[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent)}
+.tabs button:hover{color:var(--text)}
+main{padding:22px clamp(16px,3vw,36px) 60px;max-width:1500px}
+.tab[hidden]{display:none}
+
+/* ---------- блоки ---------- */
+.panel{background:var(--surface);border-radius:var(--r-lg);padding:18px 20px}
+.stack > * + *{margin-top:16px}
+.panel-head{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;justify-content:space-between;margin-bottom:12px}
+.panel-head p{font-size:13px;color:var(--muted);max-width:70ch}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.chartbox{position:relative;height:300px}
+.chartbox.short{height:230px}
+.stub{border:1px dashed var(--line);border-radius:var(--r-md);padding:16px 18px;color:var(--muted);font-size:14px;line-height:1.5}
+.stub b{color:var(--text);font-weight:500}
+
+/* автовыводы */
+.insights{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.insights li{display:grid;grid-template-columns:10px 1fr;gap:12px;align-items:start;line-height:1.5;max-width:92ch}
+.insights li::before{content:"";width:8px;height:8px;border-radius:50%;margin-top:8px;background:var(--faint)}
+.insights li.pos::before{background:var(--pos)} .insights li.neg::before{background:var(--neg)} .insights li.warn::before{background:var(--warn)} .insights li.acc::before{background:var(--accent)}
+.insights li{color:var(--text)}
+
+/* ---------- таблицы ---------- */
+.tbl{overflow:auto;max-height:640px;border:1px solid var(--line-soft);border-radius:var(--r-md)}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+th{position:sticky;top:0;background:var(--raised);text-align:left;font-weight:500;color:var(--muted);font-size:12.5px;white-space:nowrap;z-index:2}
+th[data-sort]{cursor:pointer;user-select:none}
+th[data-sort]:hover{color:var(--text)}
+th[aria-sort=ascending]::after{content:" ↑"} th[aria-sort=descending]::after{content:" ↓"}
+th.num{text-align:right}
+td.name{min-width:240px;max-width:340px}
+td.name .t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+td.name .a{font-size:12px;color:var(--faint)}
+tr.clickable{cursor:pointer}
+tr.clickable:hover td{background:rgba(255,255,255,.025)}
+tr.open td{background:var(--raised)}
+tr.detail > td{background:#1C1926;padding:16px}
+tfoot td{font-weight:600;background:var(--raised);position:sticky;bottom:0}
+.sticky-col{position:sticky;left:0;background:var(--surface);z-index:1}
+th.sticky-col{z-index:3;background:var(--raised)}
+.cost-cell{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:150px}
+.cost-cell input{width:84px;min-height:30px;padding:4px 8px}
+.src{font-size:11.5px;border-radius:4px;padding:1px 6px;white-space:nowrap}
+.src.report{color:var(--accent);background:var(--accent-soft)}
+.src.manual{color:var(--warn);background:var(--warn-soft)}
+.src.none{color:var(--neg);background:var(--neg-soft)}
+.src.rates{color:var(--muted);background:var(--raised)}
+.nodata{color:var(--neg);font-size:12.5px;white-space:nowrap}
+.filters{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
+.filters input[type=search]{min-width:240px}
+
+/* деталь товара */
+.detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px}
+.wf-row{display:grid;grid-template-columns:130px 1fr 92px;gap:8px;align-items:center;font-size:13px;margin:3px 0}
+.wf-bar{height:10px;border-radius:2px;background:var(--neg);opacity:.85}
+.wf-bar.plus{background:var(--accent)} .wf-bar.res{background:var(--pos)} .wf-bar.res.neg{background:var(--neg)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13px}
+.kv dt{color:var(--muted)} .kv dd{margin:0;text-align:right}
+
+/* воронка */
+.funnel{display:grid;gap:8px}
+.fstep{display:grid;grid-template-columns:150px 1fr 110px;gap:12px;align-items:center}
+.fbar{height:26px;border-radius:4px;background:var(--accent-soft);position:relative}
+.fbar span{position:absolute;inset:0 auto 0 0;background:var(--accent);border-radius:4px;opacity:.75}
+.fconv{font-size:12.5px;color:var(--muted);padding-left:162px;margin-top:-4px}
+
+/* план-факт */
+.pbar{position:relative;height:14px;border-radius:7px;background:var(--line);margin:10px 0 6px}
+.pbar .fill{position:absolute;inset:0 auto 0 0;border-radius:7px;max-width:100%}
+.pbar .mark{position:absolute;top:-5px;bottom:-5px;width:2px;background:var(--text)}
+.pbar .mark::after{content:attr(data-l);position:absolute;top:-19px;left:50%;transform:translateX(-50%);font-size:11px;color:var(--muted);white-space:nowrap}
+.bigpair{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.bigpair .v{font-size:26px;font-weight:600;letter-spacing:-.02em}
+.form-row{display:flex;flex-wrap:wrap;gap:12px 18px;align-items:flex-end}
+.form-row label{display:grid;gap:4px;font-size:13px;color:var(--muted)}
+
+/* уведомления */
+#errors{margin:0 clamp(16px,3vw,36px)}
+.errbox{background:var(--neg-soft);border:1px solid rgba(238,123,107,.4);border-radius:var(--r-md);padding:12px 16px;margin-bottom:12px;font-size:14px}
+.errbox ul{margin:6px 0 0;padding-left:18px}
+.errbox li + li{margin-top:4px}
+.errbox .x{float:right;background:none;border:0;color:var(--muted);cursor:pointer;font-size:18px;line-height:1}
+#toasts{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));display:grid;gap:8px;z-index:60;max-width:min(420px,calc(100vw - 32px))}
+.toast{background:var(--raised);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:var(--r-md);padding:10px 14px;font-size:14px;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.toast.err{border-left-color:var(--neg)} .toast.ok{border-left-color:var(--pos)}
+#modal{position:fixed;inset:0;background:rgba(10,8,16,.7);display:flex;align-items:center;justify-content:center;z-index:70;padding:16px}
+#modal[hidden]{display:none}
+.modal-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:22px;max-width:560px;width:100%}
+.modal-card p{margin-top:10px;color:var(--muted);font-size:14px}
+.modal-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+#drop{position:fixed;inset:0;border:3px dashed var(--accent);background:rgba(23,21,31,.85);display:flex;align-items:center;justify-content:center;font-size:20px;z-index:80;pointer-events:none}
+#drop[hidden]{display:none}
+
+/* пустое состояние */
+.empty{max-width:760px}
+.empty h2{font-size:24px;margin-bottom:8px}
+.reports{list-style:none;padding:0;margin:18px 0;display:grid;gap:12px}
+.reports li{display:grid;grid-template-columns:200px 1fr;gap:14px;padding:12px 0;border-top:1px solid var(--line-soft)}
+.reports b{font-weight:500}
+@media (max-width:640px){
+  .reports li{grid-template-columns:1fr;gap:2px}
+  .kpi .k{padding-left:0;border-right:0;border-bottom:1px solid var(--line-soft)}
+  .fstep{grid-template-columns:100px 1fr 90px}.fconv{padding-left:112px}
+  .bigpair{grid-template-columns:1fr}
+  .grid2{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <h1>Аналитика магазина на Ozon</h1>
+    <p class="sub" id="dataStamp">Загрузите отчёты, чтобы начать</p>
+  </div>
+  <div class="controls">
+    <label class="period">Период <select id="periodSel" aria-label="Период"></select></label>
+    <button id="apiBtn" class="btn" type="button" hidden title="Запросить свежие данные из Ozon API">Обновить из Ozon</button>
+    <button id="snapBtn" class="btn" type="button" title="Сохранить ключевые показатели текущего периода для графика тренда">Сохранить срез</button>
+    <label class="btn primary" for="fileInput" tabindex="0">Загрузить отчёты</label>
+    <input type="file" id="fileInput" multiple accept=".xlsx,.xls,.csv" hidden>
+  </div>
+</header>
+<div id="errors" aria-live="polite"></div>
+<section id="kpi" class="kpi" aria-label="Ключевые показатели"></section>
+<nav class="tabs" role="tablist" aria-label="Разделы">
+  <button role="tab" data-tab="overview" aria-selected="true">Обзор</button>
+  <button role="tab" data-tab="plan">План-факт</button>
+  <button role="tab" data-tab="units">Юнит-экономика</button>
+  <button role="tab" data-tab="products">Товары</button>
+  <button role="tab" data-tab="ads">Реклама и воронка</button>
+  <button role="tab" data-tab="stock">Остатки</button>
+  <button role="tab" data-tab="data">Данные и настройки</button>
+</nav>
+<main>
+  <section class="tab" id="tab-overview" role="tabpanel"></section>
+  <section class="tab" id="tab-plan" role="tabpanel" hidden></section>
+  <section class="tab" id="tab-units" role="tabpanel" hidden></section>
+  <section class="tab" id="tab-products" role="tabpanel" hidden></section>
+  <section class="tab" id="tab-ads" role="tabpanel" hidden></section>
+  <section class="tab" id="tab-stock" role="tabpanel" hidden></section>
+  <section class="tab" id="tab-data" role="tabpanel" hidden></section>
+</main>
+<div id="drop" hidden>Отпустите файлы, чтобы загрузить отчёты</div>
+<div id="modal" hidden></div>
+<div id="toasts" aria-live="polite"></div>
+<script>
+'use strict';
+/* =====================================================================
+   0. УТИЛИТЫ
+   ===================================================================== */
+const $ = (s, root = document) => root.querySelector(s);
+const $$ = (s, root = document) => [...root.querySelectorAll(s)];
+const nf0 = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 });
+const nf1 = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const nf2 = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const ok = v => v != null && isFinite(v);
+// «-0 ₽» не показываем: значения, которые округляются до нуля, выводим как 0
+const rub = (v, d = 0) => ok(v) ? (d ? nf2 : nf0).format(Math.abs(v) < (d ? 0.005 : 0.5) ? 0 : v) + '\u00a0₽' : '—';
+const pct = (v, d = 1) => ok(v) ? (d === 2 ? nf2 : d ? nf1 : nf0).format(v * 100) + '%' : '—';   // v — доля (0.15 = 15%)
+const num = (v, d = 0) => ok(v) ? (d === 2 ? nf2 : d ? nf1 : nf0).format(v) : '—';
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const sum = (arr, f = x => x) => arr.reduce((a, x) => a + (+f(x) || 0), 0);
+function median(arr) { const a = arr.filter(ok).sort((x, y) => x - y); if (!a.length) return null; const m = a.length >> 1; return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2; }
+function plural(n, one, few, many) { n = Math.abs(Math.round(n)); const m10 = n % 10, m100 = n % 100; if (m10 === 1 && m100 !== 11) return one; if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few; return many; }
+const nTov = n => `${n} ${plural(n, 'товар', 'товара', 'товаров')}`;
+
+/** Число из ячейки: понимает «1 234,56», «22,00%», «−37%», «293 руб.», «-». Пустое → null. */
+function parseNum(v) {
+  if (v == null) return null;
+  if (typeof v === 'number') return isFinite(v) ? v : null;
+  let s = String(v).replace(/[\u00a0\u202f\s]/g, '').replace(/[−–—]/g, '-').replace(/руб\.?|₽|%|шт\.?/gi, '');
+  if (s === '' || s === '-') return null;
+  s = s.replace(',', '.');
+  if (!/^-?\d*\.?\d+(e-?\d+)?$/i.test(s)) return null;
+  const n = parseFloat(s);
+  return isFinite(n) ? n : null;
+}
+/** Нормализация заголовка: нижний регистр, без неразрывных пробелов и переносов, ё→е. */
+const norm = s => String(s ?? '').replace(/[\u00a0\u202f\ufffd]/g, ' ').replace(/[\r\n]+/g, ' ').replace(/ё/g, 'е').replace(/Ё/g, 'Е').replace(/\s+/g, ' ').trim().toLowerCase();
+
+/* даты храним строками ISO 'YYYY-MM-DD' */
+const pad = n => String(n).padStart(2, '0');
+const isoOf = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const todayISO = () => isoOf(new Date());
+const ruToISO = s => { const m = /(\d{1,2})\.(\d{1,2})\.(\d{4})/.exec(s); return m ? `${m[3]}-${pad(m[2])}-${pad(m[1])}` : null; };
+const isoToRu = s => s ? `${s.slice(8, 10)}.${s.slice(5, 7)}.${s.slice(0, 4)}` : '—';
+function addDays(iso, n) { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return isoOf(d); }
+function daysIncl(a, b) { return Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 864e5) + 1; }
+const daysInMonth = key => { const [y, m] = key.split('-').map(Number); return new Date(y, m, 0).getDate(); };
+const monthStart = key => `${key}-01`;
+const monthEnd = key => `${key}-${pad(daysInMonth(key))}`;
+const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+const MONTHS_GEN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+const MON_ABBR = { 'янв': 1, 'фев': 2, 'мар': 3, 'апр': 4, 'май': 5, 'мая': 5, 'июн': 6, 'июл': 7, 'авг': 8, 'сен': 9, 'окт': 10, 'ноя': 11, 'дек': 12 };
+const monthLabel = key => { const [y, m] = key.split('-').map(Number); const s = MONTHS[m - 1]; return s[0].toUpperCase() + s.slice(1) + ' ' + y; };
+/** Дата из ячейки: серийный номер Excel, «dd.mm.yyyy», «yyyy-mm-dd». */
+function parseDateAny(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number' && v > 20000 && v < 80000) { const d = new Date(Math.round((v - 25569) * 864e5)); return d.toISOString().slice(0, 10); }
+  const s = String(v);
+  return ruToISO(s) || (/^(\d{4}-\d{2}-\d{2})/.exec(s) || [])[1] || null;
+}
+/** Excel портит артикулы вида «9.6» в дату «09.июн». Возвращаем исходный вид. */
+function fixArticle(a) {
+  if (a == null) return '';
+  const s = String(a).trim();
+  const m = /^0?(\d{1,2})\.(янв|фев|мар|апр|май|мая|июн|июл|авг|сен|окт|ноя|дек)/i.exec(s);
+  return m ? `${+m[1]}.${MON_ABBR[m[2].toLowerCase()]}` : s;
+}
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+/* =====================================================================
+   1. ХРАНИЛИЩЕ (localStorage) И СОСТОЯНИЕ
+   ===================================================================== */
+const LS = {
+  get(k, def) { try { const v = localStorage.getItem('ozd_' + k); return v ? JSON.parse(v) : def; } catch (e) { return def; } },
+  set(k, v) {
+    try { localStorage.setItem('ozd_' + k, JSON.stringify(v)); return true; }
+    catch (e) { toast('Браузер не дал сохранить данные (' + e.name + '). После перезагрузки страницы их придётся загрузить заново.', 'err'); return false; }
+  }
+};
+const DEFAULT_SETTINGS = {
+  stockCrit: 7, stockWarn: 14, supplyDays: 30,       // пороги остатков и горизонт поставки, дней
+  drrLow: 7, drrHigh: 15,                             // ориентир ДРР, %
+  rates: { configured: false, commission: null, acquiring: null, logistics: null, storage: null, other: null, tax: null },
+  catCommission: {}                                   // комиссия по категории, % (перекрывает общую)
+};
+function loadSettings() {
+  const s = LS.get('settings', {});
+  return { ...DEFAULT_SETTINGS, ...s, rates: { ...DEFAULT_SETTINGS.rates, ...(s.rates || {}) }, catCommission: { ...(s.catCommission || {}) } };
+}
+const S = {
+  datasets: LS.get('datasets', []),     // загруженные отчёты (уже разобранные и свёрнутые по SKU)
+  costs: LS.get('costs', {}),           // себестоимость, введённая вручную: {sku: {v, ts}}
+  categories: LS.get('categories', {}), // категории, заданные вручную: {sku: 'Название'}
+  settings: loadSettings(),
+  plan: LS.get('plan', { month: todayISO().slice(0, 7), revenue: null, profit: null, cats: {} }),
+  snapshots: LS.get('snapshots', []),
+  period: LS.get('period', 'all'),
+  model: null,
+  ui: { tab: 'overview', sort: {}, expanded: new Set(), filters: {}, rerender: {} }
+};
+const save = {
+  datasets: () => LS.set('datasets', S.datasets), costs: () => LS.set('costs', S.costs),
+  categories: () => LS.set('categories', S.categories), settings: () => LS.set('settings', S.settings),
+  plan: () => LS.set('plan', S.plan), snapshots: () => LS.set('snapshots', S.snapshots), period: () => LS.set('period', S.period)
+};
+
+/* =====================================================================
+   2. ЧТЕНИЕ ФАЙЛОВ
+   Все форматы приводятся к виду {sheets:[{name, rows:[[...]], merges:[...]}]}
+   ===================================================================== */
+class UserError extends Error { }
+async function readBook(file) {
+  const buf = await file.arrayBuffer();
+  if (/\.(csv|txt)$/i.test(file.name)) {
+    return { sheets: [{ name: 'CSV', rows: parseCSV(decodeText(buf)), merges: [] }] };
+  }
+  if (!window.XLSX) throw new UserError('Библиотека чтения Excel (SheetJS) не загрузилась. Проверьте интернет и обновите страницу.');
+  let wb;
+  try { wb = XLSX.read(fixEntities(new Uint8Array(buf)), { type: 'array' }); }
+  catch (e) { throw new UserError(`«${file.name}» не читается как Excel (${e.message}). Выгрузите отчёт из личного кабинета заново в формате .xlsx.`); }
+  return {
+    sheets: wb.SheetNames.map(n => {
+      const ws = wb.Sheets[n];
+      fixRange(ws);
+      return { name: n, rows: ws['!ref'] ? XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true, blankrows: true }) : [], merges: ws['!merges'] || [] };
+    })
+  };
+}
+/**
+ * Ozon записывает кириллицу в xlsx числовыми XML-сущностями (&#x41E;), а SheetJS 0.18.5
+ * декодирует их с ошибкой (кириллица превращается в мусор, неразрывные пробелы пропадают).
+ * Поэтому до разбора распаковываем xlsx (это zip), заменяем сущности обычными символами
+ * и собираем архив обратно. Если что-то пошло не так — отдаём исходный файл.
+ */
+function fixEntities(u8) {
+  try {
+    const cfb = XLSX.CFB.read(u8, { type: 'array' });
+    let changed = false;
+    cfb.FileIndex.forEach((fi, i) => {
+      if (!/\.xml$/i.test(cfb.FullPaths[i]) || !fi.content || !fi.content.length) return;
+      const text = new TextDecoder('utf-8').decode(Uint8Array.from(fi.content));
+      if (!/&#x?[0-9a-f]+;/i.test(text)) return;
+      const fixed = text.replace(/&#(x?)([0-9a-fA-F]+);/g, (m, x, h) => {
+        const c = parseInt(h, x ? 16 : 10);
+        return [0x26, 0x3C, 0x3E, 0x22, 0x27].includes(c) || (c < 0x20 && c !== 9 && c !== 10 && c !== 13) ? m : String.fromCodePoint(c);
+      });
+      fi.content = new TextEncoder().encode(fixed); fi.size = fi.content.length; changed = true;
+    });
+    return changed ? XLSX.CFB.write(cfb, { type: 'array', fileType: 'zip' }) : u8;
+  } catch (e) { console.warn('fixEntities', e); return u8; }
+}
+/** Ozon иногда пишет в файл неверный размер листа (например, «A1»). Пересчитываем диапазон по реальным ячейкам. */
+function fixRange(ws) {
+  let mr = -1, mc = -1;
+  for (const k in ws) { if (k[0] === '!') continue; const a = XLSX.utils.decode_cell(k); if (a.r > mr) mr = a.r; if (a.c > mc) mc = a.c; }
+  if (mr >= 0) ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: mr, c: mc } });
+}
+function decodeText(buf) {
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(buf).replace(/^\uFEFF/, ''); }
+  catch (e) { return new TextDecoder('windows-1251').decode(buf); }
+}
+/** CSV с автоопределением разделителя (; , табуляция) и кавычками. */
+function parseCSV(text) {
+  const first = text.split(/\r?\n/, 1)[0] || '';
+  const delim = [';', ',', '\t'].map(d => [d, first.split(d).length]).sort((a, b) => b[1] - a[1])[0][0];
+  const rows = []; let row = [], cur = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true;
+    else if (c === delim) { row.push(cur); cur = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(cur); rows.push(row); row = []; cur = ''; }
+    else cur += c;
+  }
+  if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+  return rows.map(r => r.map(v => v === '' ? null : v));
+}
+
+/* =====================================================================
+   3. ПАРСИНГ ОТЧЁТОВ
+   Для каждого типа отчёта — свои правила. Тип определяется по содержимому
+   листа (набору заголовков), а не по имени файла.
+   Колонки ищутся регулярными выражениями по тексту заголовка; для двухстрочных
+   шапок учитывается «родитель» (объединённая ячейка сверху), например
+   «Реализовано → Кол-во» и «Возвращено клиентом → Кол-во».
+   ===================================================================== */
+const COST_RE = /(себестоим|закупочн|закупк|\bcost\b|себест)/;
+const sheetText = (sh, n = 40) => sh.rows.slice(0, n).map(r => (r || []).map(norm).join(' ')).join(' ');
+/** Строка, где каждая регулярка совпала хотя бы с одной ячейкой. */
+function findRow(rows, tests, max = 60) {
+  for (let i = 0; i < Math.min(rows.length, max); i++) {
+    const cells = (rows[i] || []).map(norm);
+    if (tests.every(t => cells.some(c => t.test(c)))) return i;
+  }
+  return -1;
+}
+/** Строка подзаголовков: есть текст и нет ни одного числа. */
+function isSubHeader(r) {
+  if (!r) return false;
+  const vals = r.filter(v => v != null && String(v).trim() !== '');
+  return vals.length >= 2 && vals.every(v => parseNum(v) == null);
+}
+/** Собирает описание колонок с учётом двухстрочной шапки и объединённых ячеек. */
+function headerInfo(sh, hRow) {
+  const top = sh.rows[hRow] || [], next = sh.rows[hRow + 1] || [];
+  const width = Math.max(top.length, next.length);
+  const parent = Array.from({ length: width }, (_, c) => norm(top[c]));
+  for (const m of sh.merges) if (m.s.r === hRow) for (let c = m.s.c; c <= m.e.c; c++) parent[c] = norm(top[m.s.c]);
+  const two = isSubHeader(next);
+  const cols = parent.map((p, i) => ({ i, parent: p, child: two ? norm(next[i]) : '' }));
+  return { cols, dataStart: hRow + (two ? 2 : 1), two };
+}
+/**
+ * Сопоставляет спецификацию колонок с шапкой. Обязательные колонки, которых нет,
+ * дают понятную ошибку; необязательные — предупреждение.
+ */
+function mapColumns(h, spec, ctx) {
+  const idx = {}, missing = [], warn = [];
+  for (const [k, s] of Object.entries(spec)) {
+    const c = h.cols.find(c => {
+      const key = c.child || c.parent;
+      return key && s.re.test(key) && (!s.parent || s.parent.test(c.parent)) && !(s.exclude && s.exclude.test(key));
+    });
+    idx[k] = c ? c.i : -1;
+    if (!c) (s.required ? missing : warn).push(s.label);
+  }
+  if (missing.length) throw new UserError(
+    `«${ctx.fileName}» похож на «${ctx.typeLabel}» (лист «${ctx.sheet}»), но в нём не найдены колонки: ${missing.map(m => '«' + m + '»').join(', ')}. ` +
+    `Скорее всего, Ozon изменил формат отчёта. Правила поиска колонок описаны в блоке PARSERS в коде страницы.`);
+  return { idx, warn: warn.map(w => `нет колонки «${w}» — связанные расчёты будут недоступны`) };
+}
+function costFromRow(h) {
+  const c = h.cols.find(c => { const k = c.child || c.parent; return COST_RE.test(k) && !/%/.test(k); });
+  return c ? c.i : -1;
+}
+const getter = idx => (row, k) => idx[k] >= 0 ? row[idx[k]] : null;
+const isSku = v => { const n = parseNum(v); return n != null && n >= 10000 ? n : null; };
+
+const TYPE_LABEL = {
+  realization: 'Отчёт о реализации', ads: 'Аналитика продвижения', stock: 'Управление остатками',
+  prices: 'Цены и товары', accruals: 'Отчёт по начислениям', costs: 'Себестоимость'
+};
+const PERIOD_TYPES = ['realization', 'ads', 'accruals'];
+
+const PARSERS = [
+  /* ---------- Отчёт о реализации: продажи и возвраты по SKU за период ---------- */
+  {
+    type: 'realization',
+    detect: t => t.includes('реализовано') && t.includes('возвращено') && /\bsku\b/.test(t),
+    parse(sheets, ctx) {
+      const sh = sheets.find(s => this.detect(sheetText(s)));
+      ctx.sheet = sh.name;
+      const hRow = findRow(sh.rows, [/^sku$/, /^реализовано/]);
+      if (hRow < 0) throw new UserError(`«${ctx.fileName}»: не найдена строка заголовков с колонками «SKU» и «Реализовано».`);
+      const h = headerInfo(sh, hRow);
+      const { idx, warn } = mapColumns(h, {
+        sku: { label: 'SKU', re: /^sku$/, required: true },
+        name: { label: 'Название товара', re: /название товара/ },
+        article: { label: 'Артикул', re: /^артикул$/ },
+        soldAmt: { label: 'Реализовано → на сумму', re: /на сумму/, parent: /^реализовано/, required: true },
+        soldLoyal: { label: 'Реализовано → выплаты по механикам лояльности', re: /лояльност/, parent: /^реализовано/ },
+        soldQty: { label: 'Реализовано → Кол-во', re: /^кол-?во/, parent: /^реализовано/, required: true },
+        retAmt: { label: 'Возвращено клиентом → на сумму', re: /на сумму/, parent: /возвращ/, required: true },
+        retLoyal: { label: 'Возвращено клиентом → выплаты по механикам лояльности', re: /лояльност/, parent: /возвращ/ },
+        retQty: { label: 'Возвращено клиентом → Кол-во', re: /^кол-?во/, parent: /возвращ/, required: true }
+      }, ctx);
+      const text = sheetText(sh, hRow + 1);
+      const pm = /период с (\d{2}\.\d{2}\.\d{4}) по (\d{2}\.\d{2}\.\d{4})/.exec(text);
+      if (!pm) throw new UserError(`«${ctx.fileName}»: в шапке отчёта о реализации не найден период («за период с … по …»).`);
+      const g = getter(idx), costCol = costFromRow(h), items = {}, cost = {};
+      for (let i = h.dataStart; i < sh.rows.length; i++) {
+        const r = sh.rows[i]; if (!r) continue;
+        const sku = isSku(g(r, 'sku')); if (!sku) continue;
+        const it = items[sku] ||= { sku, name: '', article: '', soldQty: 0, soldAmt: 0, soldLoyal: 0, retQty: 0, retAmt: 0, retLoyal: 0 };
+        it.name ||= String(g(r, 'name') ?? ''); it.article ||= fixArticle(g(r, 'article'));
+        for (const k of ['soldQty', 'soldAmt', 'soldLoyal', 'retQty', 'retAmt', 'retLoyal']) it[k] += parseNum(g(r, k)) || 0;
+        if (costCol >= 0) { const c = parseNum(r[costCol]); if (c > 0) cost[sku] = c; }
+      }
+      if (!Object.keys(items).length) throw new UserError(`«${ctx.fileName}»: в отчёте о реализации нет строк с товарами.`);
+      return { period: { from: ruToISO(pm[1]), to: ruToISO(pm[2]) }, data: { items, cost }, warnings: warn };
+    }
+  },
+  /* ---------- Аналитика продвижения: расходы и воронка по кампаниям ---------- */
+  {
+    type: 'ads',
+    detect: t => t.includes('id кампании') && t.includes('расход') && t.includes('показы'),
+    parse(sheets, ctx) {
+      const sh = sheets.find(s => this.detect(sheetText(s)));
+      ctx.sheet = sh.name;
+      const hRow = findRow(sh.rows, [/^sku$/, /^расход/]);
+      if (hRow < 0) throw new UserError(`«${ctx.fileName}»: не найдена строка заголовков с колонками «SKU» и «Расход».`);
+      const h = headerInfo(sh, hRow);
+      const { idx, warn } = mapColumns(h, {
+        sku: { label: 'SKU', re: /^sku$/, required: true },
+        name: { label: 'Название товара', re: /^название товара/ },
+        tool: { label: 'Инструмент', re: /^инструмент/ },
+        place: { label: 'Место размещения', re: /^место размещения/ },
+        camp: { label: 'ID кампании', re: /^id кампании/ },
+        spend: { label: 'Расход, ₽', re: /^расход/, required: true },
+        sales: { label: 'Продажи в продвижении, ₽', re: /^продажи в продвижении/, exclude: /модел/ },
+        orders: { label: 'Продано товаров, шт', re: /^продано товаров/, exclude: /модел/ },
+        impr: { label: 'Показы', re: /^показы/, required: true },
+        clicks: { label: 'Клики', re: /^клики/ },
+        carts: { label: 'Добавления в корзину', re: /добавлени.*корзин/ },
+        cpc: { label: 'Средняя стоимость клика', re: /стоимость клика/ }
+      }, ctx);
+      const pm = /период:?\s*(\d{2}\.\d{2}\.\d{4})\s*[-–—]\s*(\d{2}\.\d{2}\.\d{4})/.exec(sheetText(sh, hRow + 1));
+      if (!pm) throw new UserError(`«${ctx.fileName}»: не найден период отчёта («Период: дд.мм.гггг - дд.мм.гггг» над таблицей).`);
+      const g = getter(idx), campaigns = [];
+      for (let i = h.dataStart; i < sh.rows.length; i++) {
+        const r = sh.rows[i]; if (!r) continue;
+        const skuN = parseNum(g(r, 'sku'));
+        if (skuN == null) continue;
+        const tool = String(g(r, 'tool') ?? '');
+        if (skuN === 0 && !tool && !parseNum(g(r, 'spend'))) continue;
+        const n = k => parseNum(g(r, k)) || 0;
+        campaigns.push({
+          sku: skuN >= 10000 ? skuN : 0,   // 0 — кампания на все товары (без привязки к SKU)
+          name: String(g(r, 'name') ?? ''), tool, place: String(g(r, 'place') ?? ''), camp: String(g(r, 'camp') ?? ''),
+          spend: n('spend'), sales: n('sales'), orders: n('orders'), impr: n('impr'), clicks: n('clicks'), carts: n('carts')
+        });
+      }
+      if (!campaigns.length) throw new UserError(`«${ctx.fileName}»: в отчёте по продвижению нет строк с кампаниями.`);
+      return { period: { from: ruToISO(pm[1]), to: ruToISO(pm[2]) }, data: { campaigns, hasCarts: idx.carts >= 0, hasOrders: idx.orders >= 0 }, warnings: warn };
+    }
+  },
+  /* ---------- Управление остатками: срез остатков и скорость продаж ---------- */
+  {
+    type: 'stock',
+    detect: t => t.includes('доступно к продаже') && /\bsku\b/.test(t) && (t.includes('дней до конца') || t.includes('среднесуточн') || t.includes('всего товаров')),
+    parse(sheets, ctx, file) {
+      // Предпочитаем лист «по товарам» (без колонок «Кластер»/«Склад»); иначе суммируем по складам.
+      const cands = sheets.filter(s => this.detect(sheetText(s)));
+      const infos = cands.map(sh => { const hRow = findRow(sh.rows, [/^sku$/, /доступно к продаже/]); return hRow < 0 ? null : { sh, h: headerInfo(sh, hRow) }; }).filter(Boolean);
+      if (!infos.length) throw new UserError(`«${ctx.fileName}»: не найдена строка заголовков с колонками «SKU» и «Доступно к продаже».`);
+      const hasLoc = x => x.h.cols.some(c => /^(кластер|склад)$/.test(c.child || c.parent));
+      const best = infos.find(x => !hasLoc(x)) || infos[0];
+      const { sh, h } = best; ctx.sheet = sh.name;
+      const { idx, warn } = mapColumns(h, {
+        sku: { label: 'SKU', re: /^sku$/, required: true },
+        name: { label: 'Название товара', re: /^название товара/ },
+        article: { label: 'Артикул', re: /^артикул$/ },
+        liquidity: { label: 'Ликвидность → Статус', re: /^статус$/, parent: /ликвидност/ },
+        daysLeft: { label: 'Дней до конца остатка', re: /дней до конца остатка/ },
+        avgDaily: { label: 'Среднесуточные продажи за 28 дней', re: /среднесуточные продажи/ },
+        daysNoSales: { label: 'Дней без продаж', re: /^дней без продаж/ },
+        fee: { label: 'Плата за вынужденное размещение', re: /плата за вынужденное размещение/ },
+        total: { label: 'Всего товаров', re: /^всего товаров/ },
+        available: { label: 'Доступно к продаже', re: /^доступно к продаже/, required: true },
+        requested: { label: 'В заявках на поставку', re: /в заявках на поставку/ },
+        inbound: { label: 'В поставках в пути', re: /в поставках в пути/ }
+      }, ctx);
+      // Дата среза — из заголовка «Плата … на 24 сен», иначе дата изменения файла.
+      let snap = null;
+      const feeHead = h.cols[idx.fee]?.parent || sheetText(sh, 3);
+      const dm = /на (\d{1,2}) (янв|фев|мар|апр|май|мая|июн|июл|авг|сен|окт|ноя|дек)/.exec(feeHead);
+      if (dm) {
+        const now = new Date(file.lastModified || Date.now());
+        let y = now.getFullYear(); const m = MON_ABBR[dm[2]];
+        if (m > now.getMonth() + 2) y--;          // срез за декабрь, открытый в январе
+        snap = `${y}-${pad(m)}-${pad(dm[1])}`;
+      }
+      snap ||= isoOf(new Date(file.lastModified || Date.now()));
+      const g = getter(idx), items = {}, costCol = costFromRow(h), cost = {};
+      const aggregated = hasLoc(best);
+      for (let i = h.dataStart; i < sh.rows.length; i++) {
+        const r = sh.rows[i]; if (!r) continue;
+        const sku = isSku(g(r, 'sku')); if (!sku) continue;
+        const n = k => parseNum(g(r, k));
+        const it = items[sku] ||= { sku, name: String(g(r, 'name') ?? ''), article: fixArticle(g(r, 'article')), liquidity: '', daysLeft: null, avgDaily: null, daysNoSales: null, fee: 0, total: 0, available: 0, inbound: 0 };
+        it.available += n('available') || 0; it.total += n('total') || 0; it.fee += n('fee') || 0;
+        it.inbound += (n('requested') || 0) + (n('inbound') || 0);
+        if (!aggregated) { it.liquidity = String(g(r, 'liquidity') ?? ''); it.daysLeft = n('daysLeft'); it.avgDaily = n('avgDaily'); it.daysNoSales = n('daysNoSales'); }
+        else if (n('avgDaily') != null) it.avgDaily = (it.avgDaily || 0) + n('avgDaily');
+        if (costCol >= 0) { const c = parseNum(r[costCol]); if (c > 0) cost[sku] = c; }
+      }
+      if (aggregated) for (const it of Object.values(items)) it.daysLeft = it.avgDaily > 0 ? Math.floor(it.available / it.avgDaily) : null;
+      if (!Object.keys(items).length) throw new UserError(`«${ctx.fileName}»: в отчёте по остаткам нет строк с товарами.`);
+      return { snapshotDate: snap, data: { items, cost, hasVelocity: idx.avgDaily >= 0 }, warnings: warn };
+    }
+  },
+  /* ---------- Цены и товары (CSV/XLSX из раздела цен): цена, себестоимость, показы ---------- */
+  {
+    type: 'prices',
+    detect: t => t.includes('ваша цена') && /\bsku\b/.test(t),
+    parse(sheets, ctx, file) {
+      const sh = sheets.find(s => this.detect(sheetText(s)));
+      ctx.sheet = sh.name;
+      const hRow = findRow(sh.rows, [/^sku$/, /^ваша цена/]);
+      if (hRow < 0) throw new UserError(`«${ctx.fileName}»: не найдена строка заголовков с колонками «SKU» и «Ваша цена».`);
+      const h = headerInfo(sh, hRow);
+      const { idx, warn } = mapColumns(h, {
+        sku: { label: 'SKU', re: /^sku$/, required: true },
+        name: { label: 'Название', re: /^название/ },
+        article: { label: 'Артикул', re: /^артикул$/ },
+        price: { label: 'Ваша цена', re: /^ваша цена/ },
+        buyerPrice: { label: 'Цена для покупателя', re: /^цена для покупателя/ },
+        ordersSum: { label: 'Заказано на сумму', re: /^заказано на сумму$/ },
+        impr: { label: 'Показы всего', re: /^показы всего$/ },
+        conv: { label: 'Конверсия из показа в заказ', re: /^конверсия из показа в заказ$/ },
+        ordersQty: { label: 'Заказано товаров', re: /^заказано товаров$/ }
+      }, ctx);
+      const g = getter(idx), costCol = costFromRow(h), items = {}, cost = {};
+      for (let i = h.dataStart; i < sh.rows.length; i++) {
+        const r = sh.rows[i]; if (!r) continue;
+        const sku = isSku(g(r, 'sku')); if (!sku) continue;
+        const n = k => parseNum(g(r, k));
+        items[sku] = { sku, name: String(g(r, 'name') ?? ''), article: fixArticle(g(r, 'article')), price: n('price'), buyerPrice: n('buyerPrice'), ordersSum: n('ordersSum'), impr: n('impr'), conv: n('conv') != null ? n('conv') / 100 : null, ordersQty: n('ordersQty') };
+        if (costCol >= 0) { const c = parseNum(r[costCol]); if (c > 0) cost[sku] = c; }
+      }
+      if (!Object.keys(items).length) throw new UserError(`«${ctx.fileName}»: в файле цен нет строк с товарами.`);
+      return { snapshotDate: isoOf(new Date(file.lastModified || Date.now())), data: { items, cost }, warnings: warn };
+    }
+  },
+  /* ---------- Отчёт по начислениям (Финансы → Начисления → выгрузка) ----------
+     Проверено на реальной выгрузке Ozon за август 2026 (лист «Начисления»):
+     строка 1 — «Период: 01.08.2026-31.08.2026», строка 2 — шапка:
+     ID начисления | Дата начисления | Группа услуг | Тип начисления | Артикул | SKU | Название товара |
+     Количество | Цена продавца | … | Вознаграждение Ozon, % | … | Сумма итого, руб.
+     Каждая строка — одна операция. Отсюда берём ВСЁ: выручку, возвраты и удержания Ozon.
+     Выручка по цене продавца = «Продажи → Выручка» + «Баллы за скидки» + «Программы партнёров»
+     (баллы — это часть цены, которую Ozon доплачивает за покупателя; в отчёте о реализации их нет). */
+  {
+    type: 'accruals',
+    detect: t => /(тип начисления|группа услуг)/.test(t) && /сумма итого/.test(t),
+    parse(sheets, ctx) {
+      const sh = sheets.find(s => this.detect(sheetText(s)));
+      ctx.sheet = sh.name;
+      const hRow = findRow(sh.rows, [/^группа услуг$/, /^тип начисления$/]);
+      if (hRow < 0) throw new UserError(`«${ctx.fileName}»: не найдена строка заголовков с колонками «Группа услуг» и «Тип начисления».`);
+      const h = headerInfo(sh, hRow);
+      const { idx, warn } = mapColumns(h, {
+        id: { label: 'ID начисления', re: /^id начисления/ },
+        date: { label: 'Дата начисления', re: /^дата начисления/, required: true },
+        group: { label: 'Группа услуг', re: /^группа услуг/, required: true },
+        type: { label: 'Тип начисления', re: /^тип начисления/, required: true },
+        article: { label: 'Артикул', re: /^артикул/ },
+        sku: { label: 'SKU', re: /^sku$/, required: true },
+        name: { label: 'Название товара', re: /^название товара/ },
+        qty: { label: 'Количество', re: /^количество/, required: true },
+        total: { label: 'Сумма итого, руб.', re: /^сумма итого/, required: true }
+      }, ctx);
+      const g = getter(idx), items = {}, unassigned = blankFees();
+      const adsByCamp = {}; let adsSub = 0, adsOther = 0;
+      const byType = {};   // сводка «группа → тип → сумма» для сверки с кабинетом
+      let dmin = null, dmax = null;
+      for (let i = h.dataStart; i < sh.rows.length; i++) {
+        const r = sh.rows[i]; if (!r) continue;
+        const total = parseNum(g(r, 'total')); if (total == null) continue;
+        const group = norm(g(r, 'group')), type = norm(g(r, 'type'));
+        if (!group && !type) continue;   // строки итогов
+        const d = parseDateAny(g(r, 'date')); if (d) { if (!dmin || d < dmin) dmin = d; if (!dmax || d > dmax) dmax = d; }
+        const key = `${g(r, 'group') ?? ''} → ${g(r, 'type') ?? ''}`; byType[key] = (byType[key] || 0) + total;
+        const cls = classifyAccrual(group, type);
+        const sku = isSku(g(r, 'sku'));
+        if (cls === 'ads') {   // расходы на продвижение идут без SKU, с ID кампании в колонке «ID начисления»
+          if (/подписк/.test(type)) adsSub += -total;
+          else if (sku) { (items[sku] ||= newAccItem(sku)).fees.ads += -total; }
+          else { const c = String(g(r, 'id') ?? '').trim(); if (c) adsByCamp[c] = (adsByCamp[c] || 0) - total; else adsOther += -total; }
+          continue;
+        }
+        if (!sku) { if (cls === 'sale' || cls === 'return') continue; unassigned[cls] += -total; continue; }
+        const it = items[sku] ||= newAccItem(sku);
+        it.name ||= String(g(r, 'name') ?? ''); it.article ||= fixArticle(g(r, 'article'));
+        const q = parseNum(g(r, 'qty')) || 0;
+        if (cls === 'sale') {
+          if (/^выручка$/.test(type)) { it.sold.soldAmt += total; it.sold.soldQty += q; } else it.sold.soldLoyal += total;
+        } else if (cls === 'return') {
+          if (/возврат выручки/.test(type)) { it.sold.retAmt += -total; it.sold.retQty += q; } else it.sold.retLoyal += -total;
+        } else it.fees[cls] += -total;   // удержания в отчёте отрицательные → храним расходы положительными
+      }
+      const pm = /(\d{2}\.\d{2}\.\d{4})\s*[-–—]\s*(\d{2}\.\d{2}\.\d{4})/.exec((sh.rows.slice(0, hRow).flat().filter(Boolean).join(' ')));
+      const period = pm ? { from: ruToISO(pm[1]), to: ruToISO(pm[2]) } : dmin ? { from: dmin, to: dmax } : null;
+      if (!period) throw new UserError(`«${ctx.fileName}»: не найден период отчёта — нет ни строки «Период: …», ни дат начислений.`);
+      const hasSales = Object.values(items).some(it => it.sold.soldQty > 0);
+      if (!hasSales) warn.push('в отчёте нет строк «Продажи → Выручка» — выручка будет взята из отчёта о реализации, если он загружен');
+      return { period, data: { items, unassigned, adsByCamp, adsSub, adsOther, hasSales, byType }, warnings: warn };
+    }
+  },
+  /* ---------- Любая таблица с себестоимостью по SKU/артикулу (управленческий учёт) ---------- */
+  {
+    type: 'costs',
+    detect: t => /(\bsku\b|артикул)/.test(t) && COST_RE.test(t),
+    parse(sheets, ctx, file) {
+      const sh = sheets.find(s => this.detect(sheetText(s)));
+      ctx.sheet = sh.name;
+      const hRow = findRow(sh.rows, [/(^sku$|^артикул)/, COST_RE]);
+      if (hRow < 0) throw new UserError(`«${ctx.fileName}»: не найдена строка с заголовками «SKU/Артикул» и «Себестоимость».`);
+      const h = headerInfo(sh, hRow);
+      const skuCol = h.cols.find(c => /^sku$/.test(c.child || c.parent))?.i ?? -1;
+      const artCol = h.cols.find(c => /^артикул/.test(c.child || c.parent))?.i ?? -1;
+      const costCol = costFromRow(h);
+      if (costCol < 0) throw new UserError(`«${ctx.fileName}»: не найдена колонка с себестоимостью (ищем «себестоимость», «закупочная цена», «cost»).`);
+      const cost = {}, byArticle = {};
+      for (let i = h.dataStart; i < sh.rows.length; i++) {
+        const r = sh.rows[i]; if (!r) continue;
+        const c = parseNum(r[costCol]); if (!(c > 0)) continue;
+        const sku = skuCol >= 0 ? isSku(r[skuCol]) : null;
+        if (sku) cost[sku] = c; else if (artCol >= 0 && r[artCol] != null) byArticle[fixArticle(r[artCol])] = c;
+      }
+      if (!Object.keys(cost).length && !Object.keys(byArticle).length) throw new UserError(`«${ctx.fileName}»: колонка себестоимости найдена, но значений в ней нет.`);
+      return { snapshotDate: isoOf(new Date(file.lastModified || Date.now())), data: { items: {}, cost, byArticle }, warnings: [] };
+    }
+  }
+];
+function blankFees() { return { commission: 0, acquiring: 0, logistics: 0, storage: 0, penalties: 0, other: 0, ads: 0 }; }
+function newAccItem(sku) { return { sku, name: '', article: '', fees: blankFees(), sold: { soldQty: 0, retQty: 0, soldAmt: 0, soldLoyal: 0, retAmt: 0, retLoyal: 0 } }; }
+/** Раскладка строки начислений по статьям: сначала по «Группе услуг», затем по ключевым словам «Типа начисления». */
+function classifyAccrual(group, type) {
+  const t = group + ' ' + type;
+  if (/^продажи/.test(group)) return 'sale';
+  if (/^возвраты/.test(group)) return 'return';
+  if (/^вознаграждение ozon/.test(group) || /(вознагражд|комисс)/.test(type)) return 'commission';
+  if (/эквайр/.test(t)) return 'acquiring';
+  if (/(продвиж|реклам|трафарет|оплата за клик|оплата за заказ|подписка premium)/.test(t)) return 'ads';
+  if (/(штраф|неустой|нарушен)/.test(t)) return 'penalties';
+  if (/(хранен|размещен)/.test(type)) return 'storage';
+  if (/(логист|доставк|магистрал|последн.*мил|обработк.*возврат|кросс-?док|перемещ)/.test(type)) return 'logistics';
+  return 'other';   // упаковка, страхование, компенсации (плюсом) и всё новое
+}
+
+/** Разбор одного файла: определяет тип по содержимому и вызывает нужный парсер. */
+async function parseFile(file) {
+  const book = await readBook(file);
+  const texts = book.sheets.map(s => sheetText(s));
+  const parser = PARSERS.find(p => texts.some(t => p.detect(t)));
+  if (!parser) {
+    throw new UserError(`«${file.name}»: не удалось определить тип отчёта по заголовкам. Поддерживаются: отчёт о реализации (колонки «SKU», «Реализовано», «Возвращено клиентом»), аналитика продвижения («SKU», «ID кампании», «Расход, ₽», «Показы»), управление остатками («SKU», «Доступно к продаже»), цены («SKU», «Ваша цена»), отчёт по начислениям («Группа услуг», «Тип начисления», «Сумма итого, руб.») и таблица себестоимости («SKU» или «Артикул» + «Себестоимость»).`);
+  }
+  const ctx = { fileName: file.name, typeLabel: TYPE_LABEL[parser.type], sheet: '' };
+  const res = parser.parse(book.sheets, ctx, file);
+  return { id: uid(), type: parser.type, fileName: file.name, loadedAt: new Date().toISOString(), period: res.period || null, snapshotDate: res.snapshotDate || null, data: res.data, warnings: res.warnings || [] };
+}
+</script>
+<script>
+/* =====================================================================
+   4. ЗАГРУЗКА: объединение с уже загруженными данными, конфликты периодов
+   ===================================================================== */
+const overlaps = (a, b) => a && b && a.from <= b.to && b.from <= a.to;
+
+async function ingestFiles(fileList) {
+  const files = [...fileList]; if (!files.length) return;
+  if (!window.XLSX && files.some(f => !/\.csv$/i.test(f.name))) { await waitLibs(); }
+  const errors = [], added = [];
+  for (const file of files) {
+    try {
+      const ds = await parseFile(file);
+      const decision = await resolveConflict(ds);
+      if (decision === 'cancel') continue;
+      added.push(`${TYPE_LABEL[ds.type]}${ds.period ? ' за ' + isoToRu(ds.period.from) + '–' + isoToRu(ds.period.to) : ''}`);
+      ds.warnings.forEach(w => errors.push({ file: file.name, msg: w, soft: true }));
+    } catch (e) {
+      console.error(e);
+      errors.push({ file: file.name, msg: e instanceof UserError ? e.message : `«${file.name}»: непредвиденная ошибка при разборе (${e.message}). Файл не загружен, остальные данные не затронуты.` });
+    }
+  }
+  save.datasets();
+  // Если выбранного периода больше нет среди доступных — переключаемся на самый свежий месяц.
+  const keys = periodKeys();
+  if (S.period !== 'all' && !keys.includes(S.period)) { S.period = keys[keys.length - 1] || 'all'; save.period(); }
+  if (added.length && S.period === 'all' && keys.length === 1) { S.period = keys[0]; save.period(); }
+  showErrors(errors);
+  if (added.length) toast(`Загружено: ${added.join('; ')}. Все показатели пересчитаны.`, 'ok');
+  recomputeAll();
+}
+
+/** Спрашивает пользователя, что делать, если новый файл перекрывает уже загруженный. */
+async function resolveConflict(ds) {
+  const same = S.datasets.filter(d => d.type === ds.type);
+  const clash = ds.period ? same.filter(d => overlaps(d.period, ds.period))
+    : same.filter(d => d.snapshotDate === ds.snapshotDate || ds.type === 'costs');
+  if (!clash.length) { S.datasets.push(ds); return 'add'; }
+  const what = ds.period ? `за ${isoToRu(ds.period.from)}–${isoToRu(ds.period.to)}` : `на ${isoToRu(ds.snapshotDate)}`;
+  const old = clash.map(d => `«${d.fileName}»${d.period ? ' (' + isoToRu(d.period.from) + '–' + isoToRu(d.period.to) + ')' : ''}`).join(', ');
+  const choice = await askModal(
+    `${TYPE_LABEL[ds.type]} ${what} уже загружен`,
+    `Новый файл «${ds.fileName}» пересекается по датам с ${old}.<br><br>
+     <b>Заменить</b> — старые данные за этот период удаляются, остаются только данные нового файла.<br>
+     <b>Объединить</b> — товары из нового файла обновятся, товары, которых в нём нет, сохранятся из старого (подходит, если один файл — черновая выгрузка, а другой — обновлённая).`,
+    [['replace', 'Заменить', 'primary'], ['merge', 'Объединить', ''], ['cancel', 'Не загружать', '']]);
+  if (choice === 'replace') { S.datasets = S.datasets.filter(d => !clash.includes(d)); S.datasets.push(ds); }
+  if (choice === 'merge') {
+    const base = clash[clash.length - 1];
+    mergeInto(base, ds);
+    S.datasets = S.datasets.filter(d => d === base || !clash.includes(d));
+  }
+  return choice;
+}
+/** Объединение: новые значения по SKU перекрывают старые, остальные сохраняются. */
+function mergeInto(base, ds) {
+  if (ds.type === 'ads') {
+    const key = c => `${c.camp}|${c.sku}|${c.tool}`;
+    const map = new Map(base.data.campaigns.map(c => [key(c), c]));
+    ds.data.campaigns.forEach(c => map.set(key(c), c));
+    base.data.campaigns = [...map.values()];
+  } else {
+    base.data.items = { ...(base.data.items || {}), ...(ds.data.items || {}) };
+    if (ds.data.unassigned) base.data.unassigned = ds.data.unassigned;
+  }
+  base.data.cost = { ...(base.data.cost || {}), ...(ds.data.cost || {}) };
+  if (ds.data.byArticle) base.data.byArticle = { ...(base.data.byArticle || {}), ...ds.data.byArticle };
+  if (base.period && ds.period) base.period = { from: base.period.from < ds.period.from ? base.period.from : ds.period.from, to: base.period.to > ds.period.to ? base.period.to : ds.period.to };
+  if (ds.snapshotDate) base.snapshotDate = ds.snapshotDate;
+  base.fileName = `${base.fileName} + ${ds.fileName}`;
+  base.loadedAt = ds.loadedAt;
+  base.warnings = [...new Set([...(base.warnings || []), ...(ds.warnings || [])])];
+}
+
+/* =====================================================================
+   5. РАСЧЁТ МЕТРИК
+   buildModel(ключ периода) собирает все отчёты за период в одну модель по SKU.
+   ===================================================================== */
+/** Месяцы, за которые есть периодические отчёты (реализация, реклама, начисления). */
+function periodKeys() {
+  const set = new Set();
+  for (const d of S.datasets) if (d.period) {
+    let k = d.period.from.slice(0, 7); const end = d.period.to.slice(0, 7);
+    for (let guard = 0; k <= end && guard < 60; guard++) { set.add(k); const [y, m] = k.split('-').map(Number); k = m === 12 ? `${y + 1}-01` : `${y}-${pad(m + 1)}`; }
+  }
+  return [...set].sort();
+}
+function datasetsFor(type, pk) {
+  const ds = S.datasets.filter(d => d.type === type);
+  if (pk === 'all') return ds;
+  const range = { from: monthStart(pk), to: monthEnd(pk) };
+  return ds.filter(d => overlaps(d.period, range));
+}
+function latestOf(type) {
+  return S.datasets.filter(d => d.type === type).sort((a, b) => ((b.snapshotDate || '') + b.loadedAt).localeCompare((a.snapshotDate || '') + a.loadedAt))[0] || null;
+}
+/** Покрытие датами: объединение интервалов отчётов (в пределах месяца, если выбран месяц). */
+function coverage(dss, pk) {
+  let iv = dss.map(d => ({ ...d.period }));
+  if (pk !== 'all') iv = iv.map(p => ({ from: p.from < monthStart(pk) ? monthStart(pk) : p.from, to: p.to > monthEnd(pk) ? monthEnd(pk) : p.to }));
+  iv.sort((a, b) => a.from.localeCompare(b.from));
+  const merged = [];
+  for (const p of iv) { const last = merged[merged.length - 1]; if (last && p.from <= addDays(last.to, 1)) { if (p.to > last.to) last.to = p.to; } else merged.push({ ...p }); }
+  if (!merged.length) return null;
+  return { from: merged[0].from, to: merged[merged.length - 1].to, days: sum(merged, p => daysIncl(p.from, p.to)) };
+}
+/** Категория: вручную заданная или первое существительное названия («Массажная щетка …» → «Щетка»). */
+function autoCategory(name) {
+  const seg = String(name || '').split('/')[0].replace(/[^\p{L}\s-]/gu, ' ').trim().split(/\s+/).filter(Boolean);
+  const w = seg.find(x => !/(ая|яя|ый|ий|ой|ое|ее|ые|ие)$/i.test(x) && x.length > 2) || seg[0] || 'Без категории';
+  return w[0].toUpperCase() + w.slice(1).toLowerCase();
+}
+const categoryOf = s => S.categories[s.sku] || autoCategory(s.name);
+
+/**
+ * Источник себестоимости по SKU:
+ *   1) введена вручную (приоритет — пользователь мог уточнить значение из отчёта);
+ *   2) найдена в любом загруженном отчёте (берём самый свежий);
+ *   3) нет данных.
+ */
+function reportCosts() {
+  const res = {};
+  const sorted = [...S.datasets].sort((a, b) => a.loadedAt.localeCompare(b.loadedAt));
+  const articleMap = {};
+  for (const d of S.datasets) for (const it of Object.values(d.data.items || {})) if (it.article) articleMap[it.article] = it.sku;
+  for (const d of sorted) {
+    for (const [sku, v] of Object.entries(d.data.cost || {})) res[sku] = { v, file: d.fileName };
+    for (const [art, v] of Object.entries(d.data.byArticle || {})) if (articleMap[art]) res[articleMap[art]] = { v, file: d.fileName };
+  }
+  return res;
+}
+function resolveCost(sku, rc) {
+  const m = S.costs[sku];
+  if (m && ok(m.v)) return { v: m.v, src: 'manual', report: rc[sku]?.v ?? null };
+  if (rc[sku]) return { v: rc[sku].v, src: 'report', file: rc[sku].file, report: rc[sku].v };
+  return { v: null, src: 'none', report: null };
+}
+
+function newSku(sku) {
+  return {
+    sku: +sku, name: '', article: '', category: '',
+    soldQty: 0, retQty: 0, soldAmt: 0, soldLoyal: 0, retAmt: 0, retLoyal: 0, inReal: false,
+    ads: { direct: 0, shared: 0, total: 0, impr: 0, clicks: 0, carts: 0, orders: 0, sales: 0, campaigns: 0 },
+    accr: null
+  };
+}
+
+function buildModel(pk) {
+  const M = { pk, skus: [], byId: {}, notes: [] };
+  const real = datasetsFor('realization', pk), ads = datasetsFor('ads', pk), acc = datasetsFor('accruals', pk);
+  const stockDs = latestOf('stock'), pricesDs = latestOf('prices');
+  M.have = { real: real.length > 0, ads: ads.length > 0, acc: acc.length > 0, stock: !!stockDs, prices: !!pricesDs, any: S.datasets.length > 0 };
+  M.range = coverage(acc.some(d => d.data.hasSales) ? acc.filter(d => d.data.hasSales) : real.length ? real : ads.length ? ads : acc, pk);
+  M.stockDate = stockDs?.snapshotDate || null;
+  M.pricesDate = pricesDs?.snapshotDate || null;
+  const get = sku => M.byId[sku] ||= newSku(sku);
+
+  // --- продажи и возвраты ---
+  // Главный источник — отчёт по начислениям (там выручка по цене продавца вместе с баллами за скидки
+  // и все удержания Ozon за те же операции). Отчёт о реализации используется, только если начислений
+  // с продажами за период нет.
+  const accSales = acc.filter(d => d.data.hasSales);
+  M.salesSrc = accSales.length ? 'accruals' : real.length ? 'realization' : null;
+  M.have.sales = !!M.salesSrc;
+  const SK = ['soldQty', 'retQty', 'soldAmt', 'soldLoyal', 'retAmt', 'retLoyal'];
+  if (M.salesSrc === 'accruals') {
+    for (const d of accSales) for (const it of Object.values(d.data.items)) {
+      const s = get(it.sku); s.name ||= it.name; s.article ||= it.article;
+      if (it.sold.soldQty || it.sold.retQty || it.sold.soldAmt) s.inReal = true;
+      for (const k of SK) s[k] += it.sold[k];
+    }
+    if (real.length) {   // сверка: почему выручка отличается от отчёта о реализации
+      const rNet = sum(real.flatMap(d => Object.values(d.data.items)), it => it.soldAmt + it.soldLoyal - it.retAmt - it.retLoyal);
+      const aNet = sum(Object.values(M.byId), s => s.soldAmt + s.soldLoyal - s.retAmt - s.retLoyal);
+      if (Math.abs(aNet - rNet) > 1) M.notes.push(`Выручка взята из отчёта по начислениям: ${rub(aNet)}. В отчёте о реализации за тот же период ${rub(rNet)} — разница в основном из-за баллов за скидки, которые Ozon доплачивает за покупателя: в отчёте о реализации их нет. Отчёт о реализации можно удалить.`);
+    }
+  } else {
+    for (const d of real) for (const it of Object.values(d.data.items)) {
+      const s = get(it.sku); s.inReal = true; s.name ||= it.name; s.article ||= it.article;
+      for (const k of SK) s[k] += it[k];
+    }
+  }
+  // --- реклама: прямые расходы по SKU и общие кампании «на все товары» ---
+  M.campaigns = []; M.adsCat = { spend: 0, sales: 0, impr: 0, clicks: 0, carts: 0, orders: 0 }; M.sharedAds = 0;
+  M.adsHasCarts = ads.some(d => d.data.hasCarts);
+  M.adsSpendOnly = ads.length > 0 && ads.every(d => d.data.spendOnly);   // реклама из начислений: только расход
+  for (const d of ads) for (const c of d.data.campaigns) {
+    M.campaigns.push(c);
+    for (const k of Object.keys(M.adsCat)) M.adsCat[k] += c[k] || 0;
+    if (c.sku) { const s = get(c.sku); s.name ||= c.name; const a = s.ads; a.direct += c.spend; a.impr += c.impr; a.clicks += c.clicks; a.carts += c.carts; a.orders += c.orders; a.sales += c.sales; a.campaigns++; }
+    else M.sharedAds += c.spend;
+  }
+  // --- начисления: удержания Ozon по SKU и общие (без SKU) ---
+  let accUnassigned = blankFees(); M.adsSubscription = 0; M.adsFromAcc = 0;
+  for (const d of acc) {
+    for (const it of Object.values(d.data.items)) {
+      const s = get(it.sku); s.name ||= it.name; s.article ||= it.article;
+      s.accr ||= blankFees(); for (const k in it.fees) s.accr[k] += it.fees[k];
+    }
+    for (const k in d.data.unassigned) accUnassigned[k] += d.data.unassigned[k];
+    // Подписка Premium не привязана к товарам и не видна в аналитике продвижения — делим её на все товары
+    M.adsSubscription += d.data.adsSub || 0;
+    // Оплата за клик/заказ: если загружена аналитика продвижения, берём расходы по SKU оттуда (не задваиваем);
+    // если нет — списания из начислений делим на все товары пропорционально выручке
+    if (!ads.length) M.adsFromAcc += sum(Object.values(d.data.adsByCamp || {}), v => v) + (d.data.adsOther || 0);
+  }
+  M.sharedAds += M.adsSubscription + M.adsFromAcc;
+  // --- остатки и карточки: добавляем товары, которых не было в продажах ---
+  const stockItems = stockDs?.data.items || {}, priceItems = pricesDs?.data.items || {};
+  for (const it of Object.values(stockItems)) { const s = get(it.sku); s.name ||= it.name; s.article ||= it.article; }
+  for (const it of Object.values(priceItems)) { const s = get(it.sku); s.name ||= it.name; s.article ||= it.article; }
+
+  const rc = reportCosts(), R = S.settings.rates;
+  const taxRate = ok(R.tax) ? R.tax / 100 : null;
+  M.taxSet = taxRate != null; M.ratesSet = !!R.configured;
+  const all = Object.values(M.byId);
+  const totalNet = sum(all, s => Math.max(0, s.soldAmt + s.soldLoyal - s.retAmt - s.retLoyal));
+  const accNet = sum(all.filter(s => s.accr), s => Math.max(0, s.soldAmt + s.soldLoyal - s.retAmt - s.retLoyal));
+
+  for (const s of all) {
+    s.category = categoryOf(s);
+    // Выручка: реализовано + выплаты по лояльности − возвраты
+    s.gross = s.soldAmt + s.soldLoyal;
+    s.returns = s.retAmt + s.retLoyal;
+    s.net = s.gross - s.returns;
+    s.netQty = s.soldQty - s.retQty;
+    s.avgPrice = s.soldQty ? s.gross / s.soldQty : (priceItems[s.sku]?.buyerPrice ?? null);
+    // Себестоимость
+    s.cost = resolveCost(s.sku, rc);
+    s.cogs = s.cost.v != null ? s.cost.v * s.netQty : null;
+    // Реклама: прямая + доля общих кампаний пропорционально выручке
+    s.ads.shared = totalNet > 0 ? M.sharedAds * Math.max(0, s.net) / totalNet : 0;
+    // Удержания площадки: из отчёта по начислениям, иначе по заданным ставкам
+    const f = blankFees();
+    if (s.accr) {
+      Object.assign(f, s.accr);
+      if (accNet > 0) { const share = Math.max(0, s.net) / accNet; for (const k of ['commission', 'acquiring', 'logistics', 'storage', 'penalties', 'other']) f[k] += accUnassigned[k] * share; }
+      if (M.have.ads) f.ads = 0;   // реклама по SKU берётся из отчёта по продвижению — не задваиваем
+      s.feeSrc = 'report';
+    } else if (R.configured) {
+      const commPct = ok(S.settings.catCommission[s.category]) ? S.settings.catCommission[s.category] : R.commission;
+      f.commission = s.net * (commPct || 0) / 100;
+      f.acquiring = s.net * (R.acquiring || 0) / 100;
+      f.logistics = s.soldQty * (R.logistics || 0);
+      f.storage = s.soldQty * (R.storage || 0);
+      f.other = s.soldQty * (R.other || 0);
+      s.feeSrc = 'rates';
+    } else s.feeSrc = 'none';
+    s.fees = f;
+    s.ads.total = s.ads.direct + s.ads.shared + (f.ads || 0);
+    // Налог — от суммы реализации: «Продажи → Выручка» минус «Возврат выручки» (в отчёте о реализации это
+    // «Реализовано на сумму»). Баллы за скидки и программы партнёров в налоговую базу не входят.
+    s.taxBase = Math.max(0, s.soldAmt - s.retAmt);
+    s.tax = taxRate != null ? s.taxBase * taxRate : 0;
+    s.feesTotal = f.commission + f.acquiring + f.logistics + f.storage + f.penalties + f.other;
+    // Прибыль считается только когда известны и себестоимость, и удержания
+    s.hasSales = s.soldQty > 0;
+    s.profitKnown = s.hasSales && s.cost.v != null && s.feeSrc !== 'none';
+    s.reason = !s.hasSales ? 'нет продаж в периоде' : s.cost.v == null ? 'нет данных о себестоимости' : s.feeSrc === 'none' ? 'нет данных об удержаниях Ozon' : '';
+    if (s.profitKnown) {
+      s.profit = s.net - s.cogs - s.feesTotal - s.ads.total - s.tax;
+      s.margin = s.net > 0 ? s.profit / s.net : null;
+      s.roi = s.cogs > 0 ? s.profit / s.cogs : null;
+      s.ppu = s.profit / s.soldQty;
+    } else { s.profit = s.margin = s.roi = s.ppu = null; }
+    s.drr = s.net > 0 ? s.ads.total / s.net : null;
+    s.buyout = s.soldQty >= 1 ? s.netQty / s.soldQty : null;
+    s.prices = priceItems[s.sku] || null;
+  }
+  const net = sum(all, s => s.net);
+  for (const s of all) s.share = net > 0 ? s.net / net : null;
+
+  // --- ABC: отдельно по прибыли и по выручке (80% / 95% накопленного вклада) ---
+  abc(all.filter(s => s.profitKnown), s => s.profit, 'abcProfit');
+  abc(all.filter(s => s.hasSales), s => s.net, 'abcRevenue');
+
+  M.skus = all.sort((a, b) => b.net - a.net);
+  M.stock = computeStock(M, stockItems);
+  M.totals = totalsOf(M.skus.filter(s => s.inReal || s.ads.total > 0));
+  M.cats = categoriesOf(M.skus);
+  M.growth = computeGrowth(M);
+  if (M.sharedAds > 0 && totalNet <= 0) M.notes.push('Расход кампаний «на все товары» не распределён: нет выручки за период.');
+  return M;
+}
+function abc(list, f, key) {
+  list.forEach(s => s[key] = 'C');
+  const pos = list.filter(s => f(s) > 0).sort((a, b) => f(b) - f(a));
+  const total = sum(pos, f); let acc = 0;
+  for (const s of pos) { const before = acc; acc += f(s); s[key] = before / total < 0.8 ? 'A' : before / total < 0.95 ? 'B' : 'C'; }
+}
+/** Итоги по набору товаров, с долями выручки по источнику себестоимости. */
+function totalsOf(list) {
+  const T = { count: list.length, net: sum(list, s => s.net), gross: sum(list, s => s.gross), returns: sum(list, s => s.returns), soldQty: sum(list, s => s.soldQty), netQty: sum(list, s => s.netQty), ads: sum(list, s => s.ads.total) };
+  const known = list.filter(s => s.profitKnown);
+  T.knownCount = known.length;
+  T.knownNet = sum(known, s => s.net);
+  T.profit = known.length ? sum(known, s => s.profit) : null;
+  T.cogsKnown = sum(list.filter(s => s.cogs != null), s => s.cogs);
+  T.cogsProfit = sum(known, s => s.cogs);
+  T.netCostKnown = sum(list.filter(s => s.cogs != null), s => s.net);
+  T.margin = T.knownNet > 0 && T.profit != null ? T.profit / T.knownNet : null;
+  T.roi = T.cogsProfit > 0 && T.profit != null ? T.profit / T.cogsProfit : null;
+  T.drr = T.net > 0 ? T.ads / T.net : null;
+  T.costShare = { report: 0, manual: 0, none: 0 };
+  for (const s of list) T.costShare[s.cost.src] += Math.max(0, s.net);
+  const base = sum(Object.values(T.costShare));
+  for (const k in T.costShare) T.costShare[k] = base > 0 ? T.costShare[k] / base : 0;
+  T.costCount = { report: list.filter(s => s.cost.src === 'report').length, manual: list.filter(s => s.cost.src === 'manual').length, none: list.filter(s => s.cost.src === 'none').length };
+  // Разложение для нитки прибыли — только по товарам с известной прибылью
+  T.wf = {
+    gross: sum(known, s => s.gross), returns: sum(known, s => s.returns), cogs: sum(known, s => s.cogs),
+    ozon: sum(known, s => s.feesTotal), ads: sum(known, s => s.ads.total), tax: sum(known, s => s.tax), profit: T.profit
+  };
+  T.fees = ['commission', 'acquiring', 'logistics', 'storage', 'penalties', 'other'].reduce((o, k) => (o[k] = sum(known, s => s.fees[k]), o), {});
+  return T;
+}
+function categoriesOf(list) {
+  const map = {};
+  for (const s of list) if (s.inReal || s.ads.total > 0) (map[s.category] ||= []).push(s);
+  return Object.entries(map).map(([name, items]) => {
+    const known = items.filter(s => s.profitKnown);
+    const profit = known.length ? sum(known, s => s.profit) : null;
+    const knownNet = sum(known, s => s.net);
+    return { name, count: items.length, net: sum(items, s => s.net), profit, margin: knownNet > 0 && profit != null ? profit / knownNet : null, partial: known.length < items.filter(s => s.hasSales).length, knownCount: known.length };
+  }).sort((a, b) => b.net - a.net);
+}
+
+/* ---------- Остатки: скорость продаж, дни до обнуления, рекомендация ---------- */
+function computeStock(M, items) {
+  const { stockCrit: crit, stockWarn: warn } = S.settings;
+  const days = M.range?.days || null;
+  const res = [];
+  for (const s of Object.values(M.byId)) {
+    const it = items[s.sku];
+    if (!it) { s.stock = null; continue; }
+    let vel = null, velSrc = '';
+    if (ok(it.avgDaily)) { vel = it.avgDaily; velSrc = 'Ozon, 28 дней'; }
+    else if (days && s.netQty > 0) { vel = s.netQty / days; velSrc = 'по продажам за период'; }
+    let d = null;
+    if (vel > 0) d = ok(it.daysLeft) && velSrc.startsWith('Ozon') ? it.daysLeft : Math.floor(it.available / vel);
+    const status = vel == null ? 'unknown' : vel <= 0 ? 'nosales' : d < crit ? 'crit' : d < warn ? 'warn' : 'ok';
+    s.stock = { ...it, vel, velSrc, days: d, status, runOut: d != null && M.stockDate ? addDays(M.stockDate, d) : null };
+    s.stock.advice = supplyAdvice(s);
+    res.push(s);
+  }
+  return res;
+}
+function supplyAdvice(s) {
+  const st = s.stock, T = S.settings.supplyDays;
+  if (st.vel == null) return { text: 'Нет данных о скорости продаж', level: 'gray' };
+  if (st.vel <= 0) return st.available > 0 ? { text: 'Продаж нет — поставка не нужна', level: 'gray' } : { text: 'Нет ни остатка, ни продаж', level: 'gray' };
+  const need = Math.max(0, Math.ceil(st.vel * T - st.available - st.inbound));
+  const grp = s.abcProfit || s.abcRevenue;
+  if (st.days < S.settings.stockWarn) {
+    if (grp === 'C') return { text: `Остатка мало, но товар в группе C${s.abcProfit ? ' по прибыли' : ' по выручке'} — пополняйте, только если он нужен в ассортименте (${need} шт на ${T} дн.)`, level: 'warn' };
+    if (need === 0) return { text: `Остатка мало, но поставки в пути (${st.inbound} шт) покрывают ${T} дн. продаж`, level: 'acc' };
+    return { text: `Пора поставлять: около ${need} шт на ${T} дн. продаж${st.inbound ? ` (с учётом ${st.inbound} шт в пути)` : ''}`, level: 'neg' };
+  }
+  if (st.days > 60) return { text: 'Запаса больше чем на 60 дней — новая поставка не нужна', level: 'gray' };
+  return { text: 'Запаса достаточно', level: 'pos' };
+}
+
+/* ---------- Воронка и точки роста (отклонение от медианы каталога) ----------
+   Используются данные рекламного отчёта за период: показы → клики → корзина → заказы,
+   и выкуп из отчёта о реализации. Потенциал = недополученные единицы × прибыль на единицу. */
+function computeGrowth(M) {
+  const G = { signals: [], med: {}, enough: false };
+  const withAds = M.skus.filter(s => s.ads.impr > 0);
+  const i2c = s => s.ads.carts / s.ads.impr, c2o = s => s.ads.carts > 0 ? Math.min(1, s.ads.orders / s.ads.carts) : null, i2o = s => s.ads.orders / s.ads.impr;
+  G.med.i2c = M.adsHasCarts ? median(withAds.map(i2c)) : null;
+  G.med.c2o = M.adsHasCarts ? median(withAds.filter(s => s.ads.carts >= 5).map(c2o)) : null;
+  G.med.i2o = median(withAds.map(i2o));
+  G.med.impr = median(withAds.map(s => s.ads.impr));
+  G.med.buyout = median(M.skus.filter(s => s.soldQty >= 5).map(s => s.buyout));
+  G.med.margin = median(M.skus.filter(s => s.profitKnown && s.margin != null).map(s => s.margin));
+  G.enough = withAds.length >= 3;
+  const good = s => s.profitKnown && s.ppu > 0 && s.margin >= Math.max(0, G.med.margin ?? 0);
+  const add = (s, kind, title, text, units) => {
+    const u = Math.max(0, units || 0);
+    G.signals.push({ s, kind, title, text, units: u, potential: s.ppu > 0 ? u * s.ppu : null });
+  };
+  if (G.enough) {
+    for (const s of withAds) {
+      if (G.med.i2c && i2c(s) < 0.75 * G.med.i2c && good(s))
+        add(s, 'card', 'Слабая карточка', `В корзину добавляют ${pct(i2c(s), 2)} показов против медианы ${pct(G.med.i2c, 2)}. Проверьте фото, цену и первые строки описания.`,
+          s.ads.impr * (G.med.i2c - i2c(s)) * (c2o(s) ?? G.med.c2o ?? 0));
+      if (G.med.impr && s.ads.impr < 0.5 * G.med.impr && good(s))
+        add(s, 'reach', 'Мало показов', `${num(s.ads.impr)} показов против медианы ${num(G.med.impr)} при хорошей марже — товару не хватает продвижения.`,
+          (G.med.impr - s.ads.impr) * i2o(s));
+      if (G.med.c2o && s.ads.carts >= 10 && c2o(s) < 0.75 * G.med.c2o && s.profitKnown)
+        add(s, 'cart', 'Бросают корзину', `Из корзины заказывают ${pct(c2o(s))} против медианы ${pct(G.med.c2o)}. Частые причины: срок доставки, цена у конкурентов, отзывы.`,
+          s.ads.carts * (G.med.c2o - c2o(s)));
+    }
+    // Товары с продажами и хорошей маржой, но без рекламы
+    for (const s of M.skus) if (s.hasSales && s.ads.impr === 0 && good(s) && G.med.impr && G.med.i2o)
+      add(s, 'reach', 'Не продвигается', `У товара хорошая маржа, но в периоде не было рекламных показов. Оценка — по медианным показам и конверсии каталога.`, G.med.impr * G.med.i2o);
+  }
+  if (G.med.buyout != null) for (const s of M.skus) if (s.soldQty >= 5 && s.buyout < G.med.buyout - 0.05 && s.profitKnown)
+    add(s, 'buyout', 'Низкий выкуп', `Выкупают ${pct(s.buyout)} против медианы ${pct(G.med.buyout)}. Проверьте отзывы о размере и соответствии описанию.`, s.soldQty * (G.med.buyout - s.buyout));
+  G.signals.sort((a, b) => (b.potential ?? -1) - (a.potential ?? -1));
+  G.total = sum(G.signals.filter(x => x.potential != null), x => x.potential);
+  return G;
+}
+
+/* ---------- Автоматические выводы для вкладки «Обзор» ---------- */
+function buildInsights(M) {
+  const out = [], T = M.totals, set = S.settings;
+  if (!M.have.sales) return [{ cls: 'warn', html: 'Нет отчёта по начислениям (или о реализации) за выбранный период — выручку, прибыль и маржу посчитать нельзя.' }];
+  const known = M.skus.filter(s => s.profitKnown);
+  const loss = known.filter(s => s.profit < 0);
+  if (!known.length) out.push({ cls: 'warn', html: `Прибыль пока не считается ни по одному товару: ${!M.ratesSet && !M.have.acc ? 'не заданы удержания Ozon (загрузите отчёт по начислениям или задайте ставки на вкладке «Данные и настройки»)' : 'не хватает себестоимости'}.` });
+  else if (loss.length) out.push({ cls: 'neg', html: `<b>${nTov(loss.length)}</b> ${plural(loss.length, 'продаётся', 'продаются', 'продаются')} в убыток — суммарно ${rub(sum(loss, s => s.profit))} за период. Больше всего теряет «${esc(short(loss.sort((a, b) => a.profit - b.profit)[0].name))}» (${rub(loss[0].profit)}).` });
+  else out.push({ cls: 'pos', html: `Все ${nTov(known.length)} с посчитанной юнит-экономикой прибыльны.` });
+  const cats = M.cats.filter(c => c.margin != null);
+  if (cats.length >= 2) {
+    const best = cats.reduce((a, b) => b.margin > a.margin ? b : a), worst = cats.reduce((a, b) => b.margin < a.margin ? b : a);
+    out.push({ cls: 'acc', html: `Лучшая маржа у категории «${esc(best.name)}» — ${pct(best.margin)}, худшая у «${esc(worst.name)}» — ${pct(worst.margin)}.${cats.some(c => c.partial) ? ' <span class="muted">По части товаров прибыль ещё не считается.</span>' : ''}` });
+  } else if (cats.length === 1) out.push({ cls: 'acc', html: `Маржа посчитана только для категории «${esc(cats[0].name)}»: ${pct(cats[0].margin)}.` });
+  if (M.have.stock) {
+    const soon = M.stock.filter(s => s.stock.status === 'crit');
+    out.push(soon.length
+      ? { cls: 'neg', html: `<b>${nTov(soon.length)}</b> ${plural(soon.length, 'закончится', 'закончатся', 'закончатся')} меньше чем через ${set.stockCrit} дн.: ${soon.slice(0, 3).map(s => '«' + esc(short(s.name)) + '»').join(', ')}${soon.length > 3 ? ' и другие' : ''}.` }
+      : { cls: 'pos', html: `Ни один товар не закончится в ближайшие ${set.stockCrit} дн.` });
+  } else out.push({ cls: '', html: '<span class="muted">Прогноз обнуления остатков появится после загрузки отчёта «Управление остатками».</span>' });
+  if (M.have.ads && T.drr != null) {
+    const d = T.drr * 100;
+    const where = d > set.drrHigh ? `<b>выше</b> ориентира ${set.drrLow}–${set.drrHigh}%: реклама съедает заметную часть выручки` : d < set.drrLow ? `<b>ниже</b> ориентира ${set.drrLow}–${set.drrHigh}%: есть запас, чтобы тратить на продвижение больше` : `в пределах ориентира ${set.drrLow}–${set.drrHigh}%`;
+    out.push({ cls: d > set.drrHigh ? 'neg' : d < set.drrLow ? 'acc' : 'pos', html: `ДРР каталога ${pct(T.drr)} — ${where}.` });
+  } else out.push({ cls: '', html: '<span class="muted">ДРР появится после загрузки отчёта «Аналитика продвижения» за этот период.</span>' });
+  const G = M.growth;
+  if (G.signals.length) out.push({ cls: 'acc', html: `Найдено <b>${G.signals.length}</b> ${plural(G.signals.length, 'точка', 'точки', 'точек')} роста в воронке${G.total > 0 ? ` — ориентировочно ${rub(G.total)} дополнительной прибыли за такой же период` : ''}. Подробности на вкладке «Реклама и воронка».` });
+  else if (!G.enough && M.have.ads) out.push({ cls: '', html: '<span class="muted">Для поиска точек роста нужно минимум 3 товара с рекламными показами.</span>' });
+  const cand = M.skus.filter(s => s.abcRevenue === 'C' && s.profitKnown && s.profit < 0);
+  const cRev = M.skus.filter(s => s.abcRevenue === 'C');
+  if (cRev.length && !cRev.some(s => s.profitKnown)) out.push({ cls: 'warn', html: `В группе C по выручке ${nTov(cRev.length)}, но прибыль по ним ещё не посчитана — нельзя сказать, какие из них стоит выводить из ассортимента.` });
+  else out.push(cand.length
+    ? { cls: 'warn', html: `<b>${nTov(cand.length)}</b> одновременно в группе C по выручке и в убытке — ${plural(cand.length, 'кандидат', 'кандидаты', 'кандидаты')} на вывод из ассортимента: ${cand.slice(0, 3).map(s => '«' + esc(short(s.name)) + '»').join(', ')}.` }
+    : { cls: 'pos', html: 'Нет товаров, которые одновременно слабо продаются и приносят убыток.' });
+  return out;
+}
+const short = (n, len = 48) => { n = String(n || '').split('/')[0].trim(); return n.length > len ? n.slice(0, len - 1) + '…' : n; };
+</script>
+<script>
+/* =====================================================================
+   6. РЕНДЕР: общие элементы
+   ===================================================================== */
+const charts = {};
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+function mkChart(id, cfg) {
+  const el = document.getElementById(id); if (!el) return;
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+  if (!window.Chart) { el.parentElement.innerHTML = '<div class="stub">Графики не загрузились (нет доступа к CDN). Цифры в таблицах при этом актуальны.</div>'; return; }
+  Chart.defaults.color = css('--muted'); Chart.defaults.font.family = css('--font'); Chart.defaults.borderColor = css('--line-soft');
+  charts[id] = new Chart(el, cfg);
+}
+const stub = html => `<div class="stub">${html}</div>`;
+const srcBadge = src => ({ report: '<span class="src report">из отчёта</span>', manual: '<span class="src manual">вручную</span>', none: '<span class="src none">не заполнено</span>', rates: '<span class="src rates">по ставкам</span>' }[src] || '');
+const nameCell = s => `<td class="name sticky-col"><div class="t" title="${esc(s.name)}">${esc(s.name || 'SKU ' + s.sku)}</div><div class="a">${s.article ? 'арт. ' + esc(s.article) + ', ' : ''}SKU ${s.sku}</div></td>`;
+const money = (v, known = true) => known ? rub(v) : '<span class="faint">—</span>';
+const signed = v => ok(v) ? `<span class="${v < 0 ? 'neg' : ''}">${rub(v)}</span>` : '<span class="faint">—</span>';
+/** Ссылка на поле ввода себестоимости на вкладке юнит-экономики. */
+const costLink = sku => `<button class="linkbtn nodata" data-goto-cost="${sku}">нет данных о себестоимости</button>`;
+const whyNot = s => s.reason === 'нет данных о себестоимости' ? costLink(s.sku) : `<span class="nodata" title="${esc(s.reason)}">${esc(s.reason)}</span>`;
+
+/** Универсальная таблица с сортировкой по клику на заголовок. */
+function table(id, cols, rows, opts = {}) {
+  const st = S.ui.sort[id] || opts.sort || { key: cols[0].key, dir: -1 };
+  const col = cols.find(c => c.key === st.key) || cols[0];
+  const v = r => col.sort ? col.sort(r) : col.val ? col.val(r) : null;
+  const sorted = [...rows].sort((a, b) => {
+    const x = v(a), y = v(b);
+    if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1;
+    return (typeof x === 'string' ? x.localeCompare(y, 'ru') : x - y) * st.dir;
+  });
+  const th = cols.map(c => `<th ${c.nosort ? '' : `data-sort="${c.key}"`} class="${c.num ? 'num' : ''} ${c.sticky ? 'sticky-col' : ''}" ${c.key === col.key ? `aria-sort="${st.dir > 0 ? 'ascending' : 'descending'}"` : ''} ${c.title ? `title="${esc(c.title)}"` : ''}>${c.label}</th>`).join('');
+  const body = sorted.map(r => {
+    const tr = `<tr ${opts.rowAttr ? opts.rowAttr(r) : ''}>${cols.map(c => c.cell ? c.cell(r) : `<td class="${c.num ? 'num' : ''}">${c.fmt ? c.fmt(c.val(r), r) : esc(c.val(r))}</td>`).join('')}</tr>`;
+    return tr + (opts.after ? opts.after(r) : '');
+  }).join('');
+  const foot = opts.foot ? `<tfoot><tr>${opts.foot}</tr></tfoot>` : '';
+  return `<div class="tbl"><table data-tid="${id}"><thead><tr>${th}</tr></thead><tbody>${body || `<tr><td colspan="${cols.length}" class="muted">Нет строк по выбранным условиям</td></tr>`}</tbody>${foot}</table></div>`;
+}
+
+/* ---------- Шапка: периоды и отметка о данных ---------- */
+function renderHeader() {
+  const keys = periodKeys(), sel = $('#periodSel');
+  sel.innerHTML = `<option value="all">Все загруженные</option>` + keys.map(k => `<option value="${k}">${monthLabel(k)}</option>`).join('');
+  sel.value = keys.includes(S.period) ? S.period : 'all';
+  const M = S.model;
+  $('#dataStamp').textContent = !M.have.any ? 'Загрузите отчёты, чтобы начать'
+    : `${M.range ? 'Данные с ' + isoToRu(M.range.from) + ' по ' + isoToRu(M.range.to) : 'Нет отчётов о продажах за период'}${M.stockDate ? ', остатки на ' + isoToRu(M.stockDate) : ''}`;
+  if (apiOn()) $('#dataStamp').textContent += ` · Ozon API: ${S.api.syncing ? 'обновляется…' : S.api.lastSync ? 'обновлено ' + timeRu(S.api.lastSync) : 'ждём первую синхронизацию'}`;
+  $('#apiBtn').hidden = !apiOn();
+}
+
+/* ---------- KPI-строка ---------- */
+function renderKPI() {
+  const M = S.model, T = M.totals, el = $('#kpi');
+  if (!M.have.any) { el.innerHTML = ''; el.hidden = true; return; }
+  el.hidden = false;
+  const cs = T.costShare;
+  const noReal = !M.have.sales;
+  // Налог по всем товарам с продажами (в том числе без себестоимости) — это сумма к уплате за период
+  const taxSum = sum(M.skus, s => s.tax || 0), taxBase = sum(M.skus, s => s.taxBase || 0);
+  const lossCount = M.skus.filter(s => s.profitKnown && s.profit < 0).length;
+  const attention = new Set([...M.skus.filter(s => s.profitKnown && s.profit < 0).map(s => s.sku), ...(M.stock || []).filter(s => s.stock.status === 'crit').map(s => s.sku)]).size;
+  const critCount = (M.stock || []).filter(s => s.stock.status === 'crit').length;
+  const profitNote = T.profit == null ? (M.ratesSet || M.have.acc ? 'нет себестоимости ни по одному товару' : '<button class="linkbtn" data-goto-tab="data">задайте удержания Ozon</button>, чтобы посчитать')
+    : `${T.profit >= 0 ? '<span class="pill pos">в плюсе</span>' : '<span class="pill neg">в убытке</span>'}<br>${T.knownNet < T.net - 1 ? `по ${pct(T.knownNet / T.net, 0)} выручки` : 'по всей выручке'}${!M.taxSet ? ', без налога' : ''}`;
+  el.innerHTML = `
+    <div class="k"><div class="lbl">Выручка</div><div class="val">${noReal ? '—' : rub(T.net)}</div>
+      <div class="note">${noReal ? 'нет отчёта о продажах' : `за вычетом возвратов, ${num(T.netQty)} шт`}</div></div>
+    <div class="k"><div class="lbl">Себестоимость</div><div class="val">${T.netCostKnown > 0 ? pct(T.cogsKnown / T.netCostKnown) : '—'}</div>
+      <div class="note">${T.cogsKnown ? rub(T.cogsKnown) + ' от выручки товаров, где она известна' : 'от выручки'}</div>
+      <div class="cover" title="Доля выручки по источнику себестоимости"><span style="width:${cs.report * 100}%;background:var(--accent)"></span><span style="width:${cs.manual * 100}%;background:var(--warn)"></span><span style="width:${cs.none * 100}%;background:var(--neg)"></span></div>
+      <div class="legend"><span><i style="background:var(--accent)"></i>из отчёта ${pct(cs.report, 0)}</span><span><i style="background:var(--warn)"></i>вручную ${pct(cs.manual, 0)}</span><span><i style="background:var(--neg)"></i>нет ${pct(cs.none, 0)}</span></div></div>
+    <div class="k"><div class="lbl">Чистая прибыль</div><div class="val ${T.profit < 0 ? 'neg' : ''}">${rub(T.profit)}</div><div class="note">${profitNote}</div></div>
+    <div class="k"><div class="lbl">Налог к уплате</div><div class="val">${noReal || !M.taxSet ? '—' : rub(taxSum)}</div>
+      <div class="note">${noReal ? 'нет отчёта о продажах' : !M.taxSet ? '<button class="linkbtn" data-goto-tab="data">задайте ставку налога</button>' : `${num(S.settings.rates.tax, S.settings.rates.tax % 1 ? 1 : 0)}% от суммы реализации ${rub(taxBase)}; Ozon его не удерживает`}</div></div>
+    <div class="k"><div class="lbl">Маржа и ROI</div><div class="val">${pct(T.margin)}</div><div class="note">ROI ${pct(T.roi, 0)}${T.profit != null ? ' на вложенную себестоимость' : ''}</div></div>
+    <div class="k"><div class="lbl">Реклама</div><div class="val">${M.have.ads ? rub(T.ads) : '—'}</div>
+      <div class="note">${M.have.ads ? `ДРР ${pct(T.drr)} <span class="pill ${T.drr * 100 > S.settings.drrHigh ? 'neg' : T.drr * 100 < S.settings.drrLow ? 'acc' : 'pos'}">${T.drr * 100 > S.settings.drrHigh ? 'выше нормы' : T.drr * 100 < S.settings.drrLow ? 'ниже нормы' : 'в норме'}</span>` : 'нет отчёта по продвижению за период'}</div></div>
+    <div class="k"><div class="lbl">Требуют внимания</div><div class="val ${attention ? 'warn' : ''}">${attention}</div>
+      <div class="note">${critCount} с остатком меньше ${S.settings.stockCrit} дн., ${lossCount} в убытке${!M.have.stock ? '<br>остатки не загружены' : ''}</div></div>`;
+}
+
+/* ---------- Пустое состояние ---------- */
+function emptyState() {
+  if (apiOn()) return `<div class="empty">
+    <h2>Данные из Ozon загружаются</h2>
+    <p class="muted">Магазин подключён по API. Первая синхронизация занимает несколько минут — страница обновится сама. ${S.api.seller.error ? `<br><b class="neg">${esc(S.api.seller.error)}</b>` : ''}</p>
+    <p class="muted">Можно не ждать и загрузить выгрузки вручную.</p>
+    <label class="btn primary" for="fileInput">Выбрать файлы</label></div>`;
+  return `<div class="empty">
+    <h2>Загрузите выгрузки из личного кабинета Ozon</h2>
+    <p class="muted">Файлы разбираются прямо в браузере и никуда не отправляются. Тип отчёта определяется по колонкам, имя файла не важно. Можно перетащить файлы на страницу.</p>
+    <ul class="reports">
+      <li><b>Отчёт по начислениям</b><span class="muted">Финансы → Начисления, выгрузка за месяц. Выручка с баллами за скидки, возвраты, комиссия, логистика, эквайринг, хранение и реклама — основа всех расчётов.</span></li>
+      <li><b>Аналитика продвижения</b><span class="muted">Расход на рекламу, показы, клики, корзины по кампаниям — ДРР и воронка.</span></li>
+      <li><b>Управление остатками</b><span class="muted">Остатки, скорость продаж, дни до обнуления.</span></li>
+      <li><b>Цены (CSV)</b><span class="muted">Себестоимость, которую вы указали в Ozon, и цена для покупателя.</span></li>
+      <li><b>Отчёт о реализации</b><span class="muted">Не обязателен. Используется, только если нет отчёта по начислениям; в нём нет баллов за скидки и удержаний Ozon.</span></li>
+    </ul>
+    <label class="btn primary" for="fileInput">Выбрать файлы</label></div>`;
+}
+
+/* =====================================================================
+   7. ВКЛАДКА «ОБЗОР»
+   ===================================================================== */
+function renderOverview() {
+  const M = S.model, el = $('#tab-overview');
+  if (!M.have.any) { el.innerHTML = emptyState(); return; }
+  const T = M.totals, ins = buildInsights(M);
+  const known = M.skus.filter(s => s.profitKnown);
+  const top = [...known].sort((a, b) => b.profit - a.profit).slice(0, 5);
+  const bottom = [...known].sort((a, b) => a.profit - b.profit).slice(0, 5);
+  const abcSum = g => sum(known.filter(s => s.abcProfit === g), s => s.profit);
+  const abcCnt = g => known.filter(s => s.abcProfit === g).length;
+  const anyPos = known.some(s => s.profit > 0); // донат имеет смысл только при положительной прибыли
+  const list = arr => arr.length ? `<ol class="insights">${arr.map(s => `<li class="${s.profit < 0 ? 'neg' : 'pos'}"><span><span style="display:flex;justify-content:space-between;gap:12px"><span>${esc(short(s.name, 56))}</span><b class="${s.profit < 0 ? 'neg' : ''}" style="white-space:nowrap">${rub(s.profit)}</b></span><span class="small muted">арт. ${esc(s.article || '—')}, маржа ${pct(s.margin)}</span></span></li>`).join('')}</ol>` : stub('Нет товаров с посчитанной прибылью.');
+  el.innerHTML = `
+    <div class="stack">
+      <div class="panel"><div class="panel-head"><h2>Выводы за ${S.period === 'all' ? 'все загруженные данные' : monthLabel(S.period).toLowerCase()}</h2></div>
+        <ul class="insights">${ins.map(i => `<li class="${i.cls}"><span>${i.html}</span></li>`).join('')}</ul>
+        ${M.notes.map(n => `<p class="small warn" style="margin-top:10px">${esc(n)}</p>`).join('')}</div>
+      <div class="grid2">
+        <div class="panel"><div class="panel-head"><h2>Нитка прибыли</h2><p>${T.knownCount && T.knownCount < M.skus.filter(s => s.hasSales).length ? `По ${nTov(T.knownCount)} с известной себестоимостью и удержаниями (${pct(T.knownNet / T.net, 0)} выручки).` : 'Куда уходит выручка.'}</p></div>
+          ${T.profit == null ? stub('Появится, когда будут известны себестоимость и удержания Ozon хотя бы по одному товару.') : '<div class="chartbox"><canvas id="chWaterfall"></canvas></div>'}</div>
+        <div class="panel"><div class="panel-head"><h2>Тренд по срезам</h2><p>График наполняется только когда вы нажимаете «Сохранить срез» — сам он историю не собирает. Делайте срез после загрузки отчётов за новый период.</p></div>
+          ${S.snapshots.length < 2 ? stub(`Сохранено срезов: <b>${S.snapshots.length}</b>. Для линии нужно минимум два.`) : '<div class="chartbox"><canvas id="chTrend"></canvas></div>'}
+          ${S.snapshots.length ? `<details style="margin-top:10px"><summary class="small muted">Сохранённые срезы</summary>${table('snaps', [
+            { key: 'ts', label: 'Когда', val: r => r.ts, fmt: v => new Date(v).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' }) },
+            { key: 'label', label: 'Период', val: r => r.label },
+            { key: 'revenue', label: 'Выручка', num: 1, val: r => r.revenue, fmt: v => rub(v) },
+            { key: 'profit', label: 'Прибыль', num: 1, val: r => r.profit, fmt: v => rub(v) },
+            { key: 'margin', label: 'Маржа', num: 1, val: r => r.margin, fmt: v => pct(v) },
+            { key: 'drr', label: 'ДРР', num: 1, val: r => r.drr, fmt: v => pct(v) },
+            { key: 'del', label: '', nosort: 1, cell: r => `<td><button class="linkbtn small" data-del-snap="${r.ts}">удалить</button></td>` }], S.snapshots, { sort: { key: 'ts', dir: -1 } })}</details>` : ''}</div>
+      </div>
+      <div class="grid2">
+        <div class="panel"><div class="panel-head"><h2>Прибыль по категориям</h2><p>Категория определяется по названию товара, её можно изменить на вкладке «Данные и настройки».</p></div>
+          ${M.cats.length ? table('cats', [
+            { key: 'name', label: 'Категория', val: r => r.name },
+            { key: 'count', label: 'Товаров', num: 1, val: r => r.count, fmt: v => num(v) },
+            { key: 'net', label: 'Выручка', num: 1, val: r => r.net, fmt: v => rub(v) },
+            { key: 'profit', label: 'Прибыль', num: 1, val: r => r.profit, fmt: (v, r) => ok(v) ? signed(v) + (r.partial ? '<div class="small faint">частично</div>' : '') : '<span class="nodata">нет данных</span>' },
+            { key: 'margin', label: 'Маржа', num: 1, val: r => r.margin, fmt: v => pct(v) }], M.cats, { sort: { key: 'net', dir: -1 } }) : stub('Нет продаж за период.')}</div>
+        <div class="panel"><div class="panel-head"><h2>ABC по чистой прибыли</h2><p>A — товары, которые дают первые 80% прибыли, B — следующие 15%, C — остальные и убыточные.</p></div>
+          ${known.length && !anyPos ? stub(`Ни один товар с посчитанной прибылью пока не прибылен (${nTov(known.length)} в убытке на ${rub(sum(known, s => s.profit))}) — делить на группы A/B/C нечего. Проверьте себестоимость и тарифы Ozon на вкладке «Данные и настройки».`) : known.length ? `<div style="display:grid;grid-template-columns:minmax(160px,220px) 1fr;gap:18px;align-items:center"><div class="chartbox short"><canvas id="chAbc"></canvas></div>
+            <dl class="kv">${['A', 'B', 'C'].map(g => `<dt>Группа ${g}, ${nTov(abcCnt(g))}</dt><dd>${signed(abcSum(g))}</dd>`).join('')}</dl></div>` : stub('Появится, когда будет посчитана прибыль хотя бы по одному товару.')}</div>
+      </div>
+      <div class="grid2">
+        <div class="panel"><div class="panel-head"><h2>Топ-5 по прибыли</h2></div>${known.length && !anyPos ? stub('Нет прибыльных товаров за период.') : list(top.filter(s => s.profit > 0))}</div>
+        <div class="panel"><div class="panel-head"><h2>Антитоп-5 по прибыли</h2></div>${list(bottom)}</div>
+      </div>
+    </div>`;
+  // Нитка прибыли (waterfall из «плавающих» столбцов)
+  if (T.profit != null) {
+    const w = T.wf; let lvl = w.gross; const steps = [['Выручка', w.gross, 'plus']];
+    for (const [l, v] of [['Возвраты', w.returns], ['Себестоимость', w.cogs], ['Услуги Ozon', w.ozon], ['Реклама', w.ads], ['Налог', w.tax]]) { steps.push([l, -v, 'minus', lvl]); lvl -= v; }
+    steps.push(['Прибыль', w.profit, 'res']);
+    mkChart('chWaterfall', {
+      type: 'bar',
+      data: { labels: steps.map(s => s[0]), datasets: [{ data: steps.map(s => s[2] === 'minus' ? [s[3] + s[1], s[3]] : [0, s[1]]), backgroundColor: steps.map(s => s[2] === 'plus' ? css('--accent') : s[2] === 'res' ? (s[1] >= 0 ? css('--pos') : css('--neg')) : 'rgba(238,123,107,.65)'), borderRadius: 3 }] },
+      options: { maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => rub(steps[c.dataIndex][1]) } } }, scales: { y: { ticks: { callback: v => nf0.format(v) } } } }
+    });
+  }
+  if (S.snapshots.length >= 2) {
+    const snaps = [...S.snapshots].sort((a, b) => a.ts.localeCompare(b.ts));
+    mkChart('chTrend', {
+      type: 'line',
+      data: { labels: snaps.map(s => `${s.label}, ${new Date(s.ts).toLocaleDateString('ru-RU')}`), datasets: [
+        { label: 'Выручка', data: snaps.map(s => s.revenue), borderColor: css('--accent'), backgroundColor: css('--accent'), tension: .25 },
+        { label: 'Прибыль', data: snaps.map(s => s.profit), borderColor: css('--pos'), backgroundColor: css('--pos'), tension: .25, spanGaps: true }] },
+      options: { maintainAspectRatio: false, scales: { y: { ticks: { callback: v => nf0.format(v) } }, x: { ticks: { maxRotation: 0, autoSkip: true } } }, plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${rub(c.raw)}` } } } }
+    });
+  }
+  if (known.length && anyPos) mkChart('chAbc', {
+    type: 'doughnut',
+    data: { labels: ['A', 'B', 'C'], datasets: [{ data: ['A', 'B', 'C'].map(g => Math.max(0, abcSum(g))), backgroundColor: [css('--pos'), css('--accent'), css('--faint')], borderWidth: 0 }] },
+    options: { maintainAspectRatio: false, cutout: '62%', plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `Группа ${c.label}: ${rub(abcSum(c.label))}` } } } }
+  });
+}
+
+/* =====================================================================
+   8. ВКЛАДКА «ПЛАН-ФАКТ»
+   Факт берётся из отчётов, пересекающихся с месяцем плана. Темп: сравниваем
+   факт с ожидаемой долей плана на дату последних данных.
+   ===================================================================== */
+function renderPlan() {
+  const el = $('#tab-plan'), P = S.plan, key = P.month || todayISO().slice(0, 7);
+  const PM = buildModel(key);
+  const T = PM.totals, dim = daysInMonth(key);
+  const cov = PM.have.sales ? PM.range : null;
+  const today = todayISO(), tKey = today.slice(0, 7);
+  const elapsedToday = key < tKey ? 1 : key > tKey ? 0 : (+today.slice(8, 10)) / dim;
+  const dataEndDay = cov ? +cov.to.slice(8, 10) : 0;
+  const expectedAtData = cov ? dataEndDay / dim : 0;
+  const avgPrice = T.netQty > 0 ? T.net / T.netQty : (S.model.totals.netQty > 0 ? S.model.totals.net / S.model.totals.netQty : null);
+  const latestKey = periodKeys().filter(k => datasetsFor('realization', k).length || datasetsFor('accruals', k).some(d => d.data.hasSales)).pop();
+  const statusOf = r => r >= 0.97 ? ['pos', 'идёте по графику'] : r >= 0.85 ? ['warn', 'немного отстаёте'] : ['neg', 'сильно отстаёте'];
+  function bar(label, fact, plan, fmt, note = '') {
+    if (!ok(plan) || plan <= 0) return `<div class="panel"><h3>${label}</h3>${stub('План не задан.')}</div>`;
+    if (fact == null) return `<div class="panel"><h3>${label}</h3>${stub(note || 'Нет факта за этот месяц.')}</div>`;
+    const done = fact / plan, exp = expectedAtData, [cls, txt] = exp > 0 ? statusOf(done / exp) : ['gray', 'нет данных'];
+    return `<div class="panel"><div class="panel-head"><h3>${label}</h3><span class="pill ${cls}">${txt}</span></div>
+      <div class="bigpair"><div><div class="small muted">Факт</div><div class="v">${fmt(fact)}</div></div><div><div class="small muted">План</div><div class="v muted">${fmt(plan)}</div></div></div>
+      <div class="pbar" aria-label="Выполнено ${pct(done, 0)}"><div class="fill" style="width:${Math.min(100, done * 100)}%;background:var(--${cls === 'gray' ? 'accent' : cls})"></div>
+        <div class="mark" style="left:${Math.min(100, expectedAtData * 100)}%" data-l="ожидается ${pct(expectedAtData, 0)}"></div>
+        ${Math.abs(elapsedToday - expectedAtData) > 0.02 && elapsedToday > 0 && elapsedToday < 1 ? `<div class="mark" style="left:${elapsedToday * 100}%;opacity:.35" data-l=""></div>` : ''}</div>
+      <p class="small muted">Выполнено ${pct(done, 0)} плана. На ${cov ? isoToRu(cov.to) + ' (последние данные)' : '—'} по равномерному темпу ожидалось ${pct(expectedAtData, 0)}.${note ? ' ' + note : ''}</p></div>`;
+  }
+  let body;
+  if (!PM.have.sales) {
+    body = stub(`За <b>${monthLabel(key).toLowerCase()}</b> нет отчёта по начислениям или о реализации, поэтому выполнение плана не считается — это не значит, что факт нулевой.
+      ${periodKeys().length ? `Загружены данные за: ${periodKeys().map(k => monthLabel(k).toLowerCase()).join(', ')}.` : ''}
+      ${latestKey && latestKey !== key ? `<br><br><button class="btn small" data-plan-month="${latestKey}">Посмотреть план-факт за ${monthLabel(latestKey).toLowerCase()}</button>` : ''}`);
+  } else {
+    const daysLeft = dim - dataEndDay;
+    const perDay = T.net / cov.days;
+    const need = ok(P.revenue) && daysLeft > 0 ? Math.max(0, P.revenue - T.net) / daysLeft : null;
+    const planQty = ok(P.revenue) && avgPrice ? P.revenue / avgPrice : null;
+    body = `<div class="grid3">
+      ${bar('Выручка', T.net, P.revenue, rub)}
+      ${bar('Чистая прибыль', T.profit, P.profit, rub, T.profit != null && T.knownNet < T.net - 1 ? `Прибыль посчитана по ${pct(T.knownNet / T.net, 0)} выручки.` : T.profit == null ? 'Прибыль не считается: нет себестоимости или удержаний.' : '')}
+      ${bar('Продажи, шт', T.netQty, planQty, v => num(v) + ' шт', planQty ? `План в штуках = план выручки ÷ средняя цена продажи ${rub(avgPrice)}.` : '')}
+    </div>
+    <div class="panel"><div class="panel-head"><h2>Нужный темп</h2><p>Данные есть по ${isoToRu(cov.to)}: ${cov.days} ${plural(cov.days, 'день', 'дня', 'дней')} из ${dim}.</p></div>
+      ${!ok(P.revenue) ? stub('Задайте план выручки, чтобы увидеть нужный темп.') : daysLeft <= 0 ? stub(`Месяц закрыт по данным. Итог: ${pct(T.net / P.revenue, 0)} плана выручки.`) :
+      `<div class="bigpair"><div><div class="small muted">Сейчас в среднем в день</div><div class="v">${rub(perDay)}</div></div>
+       <div><div class="small muted">Нужно в день до конца месяца (${daysLeft} ${plural(daysLeft, 'день', 'дня', 'дней')})</div><div class="v ${need > perDay ? 'neg' : 'pos'}">${rub(need)}</div></div></div>
+       <p style="margin-top:12px">${need <= perDay ? `Текущего темпа хватает: запас ${rub(perDay - need)} в день.` : `Нужно ускориться на ${pct(need / perDay - 1, 0)} — это ещё ${rub(need - perDay)} выручки в день.`}</p>`}</div>
+    ${Object.keys(P.cats || {}).some(k => ok(P.cats[k]?.revenue) || ok(P.cats[k]?.profit)) ? `<div class="panel"><div class="panel-head"><h2>По категориям</h2></div><div class="grid3">${PM.cats.filter(c => P.cats[c.name]).map(c => {
+      const pc = P.cats[c.name];
+      const row = (lbl, f, p) => { if (!ok(p) || p <= 0) return ''; if (f == null) return `<p class="small">${lbl}: <span class="nodata">нет данных</span></p>`; const d = f / p, [cls, t] = statusOf(expectedAtData ? d / expectedAtData : 0); return `<p class="small" style="margin-top:8px">${lbl}: ${rub(f)} из ${rub(p)} <span class="pill ${cls}">${t}</span></p><div class="pbar"><div class="fill" style="width:${Math.min(100, d * 100)}%;background:var(--${cls})"></div><div class="mark" style="left:${expectedAtData * 100}%" data-l=""></div></div>`; };
+      return `<div><h3>${esc(c.name)}</h3>${row('Выручка', c.net, pc.revenue)}${row('Прибыль', c.profit, pc.profit)}</div>`; }).join('')}</div></div>` : ''}`;
+  }
+  const catNames = [...new Set([...PM.cats.map(c => c.name), ...S.model.cats.map(c => c.name)])];
+  el.innerHTML = `<div class="stack">
+    <div class="panel"><div class="panel-head"><h2>План на месяц</h2><p>Сохраняется в браузере. План в штуках считается сам из плана выручки.</p></div>
+      <div class="form-row">
+        <label>Месяц<input type="month" id="planMonth" value="${key}"></label>
+        <label>Выручка, ₽<input type="number" id="planRev" min="0" step="1000" value="${P.revenue ?? ''}"></label>
+        <label>Чистая прибыль, ₽<input type="number" id="planProfit" step="1000" value="${P.profit ?? ''}"></label>
+        <button class="btn primary" id="planSave">Сохранить план</button>
+      </div>
+      <details style="margin-top:14px"><summary class="small muted">План по категориям</summary>
+        <div class="tbl" style="margin-top:10px"><table><thead><tr><th>Категория</th><th class="num">Выручка, ₽</th><th class="num">Прибыль, ₽</th></tr></thead><tbody>
+        ${catNames.map(n => `<tr><td>${esc(n)}</td><td class="num"><input type="number" data-plan-cat="${esc(n)}" data-f="revenue" value="${P.cats?.[n]?.revenue ?? ''}"></td><td class="num"><input type="number" data-plan-cat="${esc(n)}" data-f="profit" value="${P.cats?.[n]?.profit ?? ''}"></td></tr>`).join('') || '<tr><td colspan="3" class="muted">Категории появятся после загрузки отчётов</td></tr>'}
+        </tbody></table></div></details>
+    </div>${body}</div>`;
+}
+
+/* =====================================================================
+   9. ВКЛАДКА «ЮНИТ-ЭКОНОМИКА»
+   Цепочка на одну проданную единицу: цена → минус статьи → прибыль/шт.
+   ===================================================================== */
+function unitRow(s) {
+  const q = s.soldQty || 1;
+  return {
+    // себестоимость — полная за штуку; себестоимость вернувшихся товаров учтена в строке возвратов
+    price: s.gross / q, cost: s.cost.v, acq: s.fees.acquiring / q, log: s.fees.logistics / q, stor: s.fees.storage / q,
+    ads: s.ads.total / q, comm: s.fees.commission / q, tax: s.tax / q,
+    retpen: (s.returns - (s.cost.v != null ? s.cost.v * s.retQty : 0) + s.fees.penalties) / q, other: s.fees.other / q
+  };
+}
+function costInput(s) {
+  const c = s.cost;
+  return `<div class="cost-cell"><input type="number" min="0" step="0.01" id="cost-${s.sku}" data-cost="${s.sku}" value="${c.v ?? ''}" placeholder="₽ за шт" aria-label="Себестоимость ${esc(short(s.name))}">
+    ${srcBadge(c.src)}${c.src === 'manual' && c.report != null ? `<button class="linkbtn small" data-reset-cost="${s.sku}" title="Вернуть значение из отчёта (${rub(c.report, 2)})">из отчёта</button>` : ''}</div>`;
+}
+function renderUnits() {
+  const M = S.model, el = $('#tab-units');
+  if (!M.have.any) { el.innerHTML = emptyState(); return; }
+  const f = S.ui.filters.units ||= { q: '', cat: '', src: '' };
+  const withSales = M.skus.filter(s => s.hasSales);
+  const noCost = M.skus.filter(s => s.cost.src === 'none' && (s.hasSales || s.stock));
+  const calc = withSales.filter(s => s.profitKnown);
+  const pos = calc.filter(s => s.profit > 0);
+  el.innerHTML = `<div class="stack">
+    <div class="panel"><div class="panel-head"><h2>Юнит-экономика каталога</h2><p>${!M.ratesSet && !M.have.acc ? '<b class="warn">Удержания Ozon не заданы.</b> Отчёт о реализации не содержит комиссий и логистики — загрузите отчёт по начислениям или <button class="linkbtn" data-goto-tab="data">задайте ставки</button>.' : M.have.acc ? 'Удержания — из отчёта по начислениям (факт).' : 'Удержания Ozon посчитаны по заданным ставкам — это оценка, а не факт.'}</p></div>
+      <div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))">
+        <div><div class="small muted">Средняя маржа</div><div class="v" style="font-size:24px;font-weight:600">${pct(M.totals.margin)}</div></div>
+        <div><div class="small muted">Средний ROI</div><div class="v" style="font-size:24px;font-weight:600">${pct(M.totals.roi, 0)}</div></div>
+        <div><div class="small muted">С положительной юниткой</div><div class="v" style="font-size:24px;font-weight:600">${withSales.length ? pct(pos.length / withSales.length, 0) : '—'}</div><div class="small muted">${pos.length} из ${withSales.length} с продажами</div></div>
+        <div><div class="small muted">Не посчитать</div><div class="v ${withSales.length - calc.length ? 'warn' : ''}" style="font-size:24px;font-weight:600">${withSales.length ? pct((withSales.length - calc.length) / withSales.length, 0) : '—'}</div><div class="small muted">${withSales.filter(s => s.cost.src === 'none').length} без себестоимости</div></div>
+      </div></div>
+    ${noCost.length ? `<div class="panel" id="noCostBlock" style="border:1px solid rgba(238,123,107,.35)"><div class="panel-head"><h2>Нет данных о себестоимости</h2><p>Себестоимость этих товаров не найдена ни в одном отчёте. Пока её нет, прибыль, маржа и ROI по ним не считаются. Введите закупочную цену за штуку — она сохранится в браузере и применится к будущим отчётам.</p></div>
+      ${table('nocost', [
+        { key: 'name', label: 'Товар', sticky: 1, val: s => s.name, cell: nameCell },
+        { key: 'net', label: 'Выручка', num: 1, val: s => s.net, fmt: v => rub(v) },
+        { key: 'price', label: 'Цена продажи', num: 1, val: s => s.avgPrice, fmt: v => rub(v) },
+        { key: 'cost', label: 'Себестоимость, ₽/шт', nosort: 1, cell: s => `<td>${costInput(s)}</td>` }], noCost, { sort: { key: 'net', dir: -1 } })}</div>` : ''}
+    <div class="panel"><div class="panel-head"><h2>Цепочка на единицу товара</h2><p>Всё на одну проданную штуку. Реклама = расход на рекламу по SKU (включая долю кампаний «на все товары») ÷ продажи. Штрафы есть только в отчёте по начислениям.</p></div>
+      <div class="filters">
+        <input type="search" id="uQ" placeholder="Название, артикул или SKU" value="${esc(f.q)}" aria-label="Поиск">
+        <select id="uCat" aria-label="Категория"><option value="">Все категории</option>${M.cats.map(c => `<option ${f.cat === c.name ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
+        <select id="uSrc" aria-label="Себестоимость"><option value="">Любая себестоимость</option><option value="report" ${f.src === 'report' ? 'selected' : ''}>из отчёта</option><option value="manual" ${f.src === 'manual' ? 'selected' : ''}>вручную</option><option value="none" ${f.src === 'none' ? 'selected' : ''}>не заполнено</option></select>
+      </div><div id="unitsTable"></div></div></div>`;
+  renderUnitsTable();
+}
+function matchQ(s, q) { q = norm(q); return !q || norm(s.name).includes(q) || norm(s.article) === q || norm(s.article).startsWith(q) || String(s.sku).includes(q); }
+function renderUnitsTable() {
+  const M = S.model, f = S.ui.filters.units;
+  const rows = M.skus.filter(s => s.hasSales && matchQ(s, f.q) && (!f.cat || s.category === f.cat) && (!f.src || s.cost.src === f.src));
+  const u = s => unitRow(s);
+  const minus = key => ({ num: 1, val: s => u(s)[key], fmt: (v, s) => s.feeSrc === 'none' && ['acq', 'log', 'stor', 'comm', 'other'].includes(key) ? '<span class="faint">?</span>' : ok(v) ? (Math.abs(v) < 0.005 ? '0\u00a0₽' : rub(-v, 2)) : '—' });
+  $('#unitsTable').innerHTML = table('units', [
+    { key: 'name', label: 'Товар', sticky: 1, val: s => s.name, cell: nameCell },
+    { key: 'cat', label: 'Категория', val: s => s.category },
+    { key: 'cost', label: 'Себестоимость', sort: s => s.cost.v, cell: s => `<td>${costInput(s)}</td>` },
+    { key: 'price', label: 'Цена продажи', num: 1, val: s => u(s).price, fmt: v => rub(v, 2) },
+    { key: 'ucost', label: '− Себест.', num: 1, val: s => u(s).cost, fmt: v => ok(v) ? rub(-v, 2) : '<span class="nodata">нет</span>' },
+    { key: 'acq', label: '− Эквайринг', ...minus('acq') },
+    { key: 'log', label: '− Логистика', ...minus('log') },
+    { key: 'stor', label: '− Хранение', ...minus('stor') },
+    { key: 'ads', label: '− Реклама', ...minus('ads') },
+    { key: 'comm', label: '− Комиссия', ...minus('comm') },
+    { key: 'tax', label: '− Налог', ...minus('tax'), title: S.model.taxSet ? '' : 'Ставка налога не задана' },
+    { key: 'retpen', label: '− Возвраты и штрафы', ...minus('retpen') },
+    { key: 'other', label: '− Прочее', ...minus('other') },
+    { key: 'ppu', label: '= Прибыль/шт', num: 1, val: s => s.ppu, cell: s => `<td class="num">${s.profitKnown ? `<b class="${s.ppu < 0 ? 'neg' : 'pos'}">${rub(s.ppu, 2)}</b>` : whyNot(s)}</td>` },
+    { key: 'margin', label: 'Маржа', num: 1, val: s => s.margin, fmt: (v, s) => s.profitKnown ? pct(v) : '—' },
+    { key: 'roi', label: 'ROI', num: 1, val: s => s.roi, fmt: (v, s) => s.profitKnown ? pct(v, 0) : '—' },
+    { key: 'fsrc', label: 'Удержания', val: s => s.feeSrc, fmt: v => v === 'none' ? '<span class="src none">не заданы</span>' : srcBadge(v) }
+  ], rows, { sort: { key: 'ppu', dir: -1 } });
+}
+</script>
+<script>
+/* =====================================================================
+   10. ВКЛАДКА «ТОВАРЫ»
+   ===================================================================== */
+function renderProducts() {
+  const M = S.model, el = $('#tab-products');
+  if (!M.have.any) { el.innerHTML = emptyState(); return; }
+  const f = S.ui.filters.products ||= { q: '', cat: '' };
+  el.innerHTML = `<div class="panel"><div class="panel-head"><h2>Товары</h2><p>Нажмите на строку, чтобы открыть детализацию: нитку прибыли, воронку, остаток и рекомендацию по поставке. ABC по прибыли и по выручке — разные срезы.</p></div>
+    <div class="filters"><input type="search" id="pQ" placeholder="Название, артикул или SKU" value="${esc(f.q)}" aria-label="Поиск">
+    <select id="pCat" aria-label="Категория"><option value="">Все категории</option>${M.cats.map(c => `<option ${f.cat === c.name ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
+    <div id="productsTable"></div></div>`;
+  renderProductsTable();
+}
+function renderProductsTable() {
+  const M = S.model, f = S.ui.filters.products;
+  const rows = M.skus.filter(s => (s.hasSales || s.ads.total > 0 || s.stock) && matchQ(s, f.q) && (!f.cat || s.category === f.cat));
+  const fee = k => (v, s) => s.feeSrc === 'none' ? '<span class="faint">?</span>' : rub(v);
+  const cols = [
+    { key: 'name', label: 'Товар', sticky: 1, val: s => s.name, cell: nameCell },
+    { key: 'cat', label: 'Категория', val: s => s.category },
+    { key: 'abcP', label: 'ABC прибыль', val: s => s.abcProfit || null, fmt: v => v ? `<span class="pill ${v === 'A' ? 'pos' : v === 'B' ? 'acc' : 'gray'}">${v}</span>` : '<span class="faint">—</span>' },
+    { key: 'abcR', label: 'ABC выручка', val: s => s.abcRevenue || null, fmt: v => v ? `<span class="pill ${v === 'A' ? 'pos' : v === 'B' ? 'acc' : 'gray'}">${v}</span>` : '<span class="faint">—</span>' },
+    { key: 'cost', label: 'Себест./шт', num: 1, val: s => s.cost.v, fmt: (v, s) => ok(v) ? `${rub(v, 2)}<div>${srcBadge(s.cost.src)}</div>` : costLink(s.sku) },
+    { key: 'price', label: 'Цена', num: 1, val: s => s.avgPrice, fmt: v => rub(v, 2) },
+    { key: 'qty', label: 'Продано, шт', num: 1, val: s => s.soldQty, fmt: v => num(v) },
+    { key: 'net', label: 'Выручка', num: 1, val: s => s.net, fmt: v => rub(v) },
+    { key: 'acq', label: 'Эквайринг', num: 1, val: s => s.fees.acquiring, fmt: fee() },
+    { key: 'log', label: 'Логистика', num: 1, val: s => s.fees.logistics, fmt: fee() },
+    { key: 'stor', label: 'Хранение', num: 1, val: s => s.fees.storage, fmt: fee() },
+    { key: 'comm', label: 'Комиссия', num: 1, val: s => s.fees.commission, fmt: fee() },
+    { key: 'ads', label: 'Реклама', num: 1, val: s => s.ads.total, fmt: (v, s) => M.have.ads || s.accr ? rub(v) : '<span class="faint">нет отчёта</span>' },
+    { key: 'drr', label: 'ДРР', num: 1, val: s => s.drr, fmt: v => pct(v) },
+    { key: 'tax', label: 'Налоги', num: 1, val: s => s.tax, fmt: v => M.taxSet ? rub(v) : '<span class="faint" title="Ставка налога не задана">—</span>' },
+    { key: 'pen', label: 'Штрафы', num: 1, val: s => s.fees.penalties, fmt: (v, s) => s.accr ? rub(v) : '<span class="faint" title="Штрафы есть только в отчёте по начислениям">—</span>' },
+    { key: 'ret', label: 'Возвраты', num: 1, val: s => s.returns, fmt: (v, s) => `${rub(v)}${s.retQty ? `<div class="small faint">${s.retQty} шт</div>` : ''}` },
+    { key: 'other', label: 'Прочие', num: 1, val: s => s.fees.other, fmt: fee() },
+    { key: 'profit', label: 'Прибыль', num: 1, val: s => s.profit, cell: s => `<td class="num">${s.profitKnown ? `<b class="${s.profit < 0 ? 'neg' : ''}">${rub(s.profit)}</b>` : whyNot(s)}</td>` },
+    { key: 'ppu', label: 'Прибыль/шт', num: 1, val: s => s.ppu, fmt: v => signed(v) },
+    { key: 'roi', label: 'ROI', num: 1, val: s => s.roi, fmt: v => pct(v, 0) },
+    { key: 'margin', label: 'Маржа', num: 1, val: s => s.margin, fmt: v => pct(v) },
+    { key: 'share', label: 'Доля выручки', num: 1, val: s => s.share, fmt: v => pct(v) }
+  ];
+  $('#productsTable').innerHTML = table('products', cols, rows, {
+    sort: { key: 'net', dir: -1 },
+    rowAttr: s => `class="clickable ${S.ui.expanded.has(s.sku) ? 'open' : ''}" data-expand="${s.sku}" tabindex="0" aria-expanded="${S.ui.expanded.has(s.sku)}"`,
+    after: s => S.ui.expanded.has(s.sku) ? `<tr class="detail"><td colspan="${cols.length}">${productDetail(s)}</td></tr>` : ''
+  });
+}
+function productDetail(s) {
+  const M = S.model;
+  // Нитка прибыли по товару
+  let wf;
+  if (!s.hasSales) wf = stub('Нет продаж за период.');
+  else {
+    const items = [['Выручка', s.gross, 'plus'], ['Возвраты', -s.returns], ['Себестоимость', s.cogs != null ? -s.cogs : null], ['Комиссия', -s.fees.commission], ['Эквайринг', -s.fees.acquiring], ['Логистика', -s.fees.logistics], ['Хранение', -s.fees.storage], ['Штрафы и прочее', -(s.fees.penalties + s.fees.other)], ['Реклама', -s.ads.total], ['Налог', -s.tax], ['Прибыль', s.profit, 'res']];
+    const max = s.gross || 1;
+    wf = items.map(([l, v, t]) => `<div class="wf-row"><span class="muted">${l}</span><span>${ok(v) ? `<div class="wf-bar ${t || ''} ${t === 'res' && v < 0 ? 'neg' : ''}" style="width:${Math.min(100, Math.abs(v) / max * 100)}%"></div>` : ''}</span><span class="num">${ok(v) ? rub(v) : l === 'Прибыль' ? whyNot(s) : l === 'Себестоимость' ? costLink(s.sku) : '—'}</span></div>`).join('')
+      + (s.feeSrc === 'none' ? '<p class="small warn" style="margin-top:6px">Удержания Ozon не заданы.</p>' : s.feeSrc === 'rates' ? '<p class="small muted" style="margin-top:6px">Удержания — по ставкам, это оценка.</p>' : '');
+  }
+  // Мини-воронка
+  const a = s.ads;
+  const fn = a.impr > 0 ? [['Показы (реклама)', a.impr], ['Клики', a.clicks], ...(M.adsHasCarts ? [['В корзину', a.carts]] : []), ['Заказано из рекламы', a.orders], ['Выкуплено', s.netQty]]
+    : null;
+  const funnel = fn ? `<dl class="kv">${fn.map(([l, v], i) => `<dt>${l}</dt><dd>${num(v)}${i > 0 && fn[i - 1][1] > 0 && i < fn.length - 1 ? ` <span class="small faint">${pct(v / fn[i - 1][1], 1)}</span>` : ''}</dd>`).join('')}
+      <dt>Выкуп</dt><dd>${pct(s.buyout)}</dd></dl>${s.prices?.impr ? `<p class="small muted" style="margin-top:8px">Всего показов карточки по файлу цен: ${num(s.prices.impr)}, конверсия в заказ ${pct(s.prices.conv, 2)} (за период, выбранный при выгрузке).</p>` : ''}`
+    : s.prices?.impr ? `<dl class="kv"><dt>Показы карточки</dt><dd>${num(s.prices.impr)}</dd><dt>Заказано</dt><dd>${num(s.prices.ordersQty)}</dd><dt>Конверсия в заказ</dt><dd>${pct(s.prices.conv, 2)}</dd><dt>Выкуп</dt><dd>${pct(s.buyout)}</dd></dl><p class="small muted" style="margin-top:8px">Данные файла цен — за период, выбранный при выгрузке. Рекламных показов в периоде не было.</p>`
+      : stub('Нет данных о показах: товар не продвигался, а файл цен не загружен.');
+  // Остаток
+  const st = s.stock;
+  const stock = st ? `<dl class="kv"><dt>Доступно к продаже</dt><dd>${num(st.available)} шт</dd><dt>В пути и в заявках</dt><dd>${num(st.inbound)} шт</dd>
+      <dt>Скорость продаж</dt><dd>${ok(st.vel) ? num(st.vel, 2) + ' шт/день' : '—'}</dd><dt>Хватит на</dt><dd>${st.days != null ? st.days + ' дн.' : '—'}</dd>
+      <dt>Обнулится</dt><dd>${st.runOut ? isoToRu(st.runOut) : '—'}</dd>${st.liquidity ? `<dt>Статус Ozon</dt><dd>${esc(st.liquidity)}</dd>` : ''}</dl>
+      <p style="margin-top:10px"><span class="pill ${st.advice.level}">${esc(st.advice.text)}</span></p>${st.velSrc ? `<p class="small faint" style="margin-top:4px">Скорость: ${st.velSrc}</p>` : ''}`
+    : stub('Товара нет в отчёте по остаткам.');
+  return `<div class="detail-grid"><div><h4 style="margin-bottom:8px">Нитка прибыли</h4>${wf}</div><div><h4 style="margin-bottom:8px">Воронка</h4>${funnel}</div><div><h4 style="margin-bottom:8px">Остаток и поставка</h4>${stock}</div></div>`;
+}
+
+/* =====================================================================
+   11. ВКЛАДКА «РЕКЛАМА И ВОРОНКА»
+   ===================================================================== */
+function renderAds() {
+  const M = S.model, el = $('#tab-ads');
+  if (!M.have.any) { el.innerHTML = emptyState(); return; }
+  if (!M.have.ads) { el.innerHTML = `<div class="panel"><h2>Реклама и воронка</h2><div style="margin-top:12px">${stub('Нет отчёта <b>«Аналитика продвижения»</b> за выбранный период. Загрузите его, чтобы увидеть воронку, ДРР по кампаниям и точки роста.')}</div></div>`; return; }
+  const C = M.adsCat, G = M.growth, T = M.totals;
+  const steps = [['Показы', C.impr], ['Клики (визиты)', C.clicks], ...(M.adsHasCarts ? [['В корзину', C.carts]] : []), ['Заказано', C.orders]];
+  const lg = v => v > 0 ? Math.log10(v + 1) / Math.log10(C.impr + 1) : 0;
+  const funnel = steps.map(([l, v], i) => `${i ? `<div class="fconv">конверсия ${pct(steps[i - 1][1] ? v / steps[i - 1][1] : null, 2)}</div>` : ''}
+      <div class="fstep"><span>${l}</span><div class="fbar"><span style="width:${Math.max(2, lg(v) * 100)}%"></span></div><b class="num">${num(v)}</b></div>`).join('');
+  const kinds = { card: 'Слабая карточка', reach: 'Мало показов', cart: 'Брошенные корзины', buyout: 'Низкий выкуп' };
+  el.innerHTML = `<div class="stack">
+    <div class="grid2">
+      <div class="panel"><div class="panel-head"><h2>Воронка каталога</h2><p>По рекламным кампаниям за период, включая кампании «на все товары». Ширина полос — в логарифмической шкале, иначе нижние этапы не видны.</p></div>
+        ${M.adsSpendOnly ? stub('Реклама взята из начислений Ozon: там есть только расход — по видам продвижения и, для оплаты за заказ, по товарам. Показы, клики и заказы из рекламы Ozon отдаёт только через Ozon Performance API.') : `<div class="funnel">${funnel}</div>`}
+        ${M.have.sales ? `<p class="small muted" style="margin-top:14px">Выкуплено по ${M.salesSrc === 'accruals' ? 'отчёту по начислениям' : 'отчёту о реализации'}: ${num(T.soldQty)} шт, возвращено ${num(T.soldQty - T.netQty)} шт, выкуп ${pct(T.soldQty ? T.netQty / T.soldQty : null)}.</p>` : ''}</div>
+      <div class="panel"><div class="panel-head"><h2>Расход и эффективность</h2></div>
+        <dl class="kv" style="font-size:15px"><dt>Расход на рекламу</dt><dd>${rub(C.spend)}</dd>
+          <dt>из них «на все товары»</dt><dd>${rub(M.sharedAds)}</dd>
+          <dt>Продажи в продвижении</dt><dd>${rub(C.sales)}</dd>
+          <dt>ДРР по данным рекламы</dt><dd>${pct(C.sales ? C.spend / C.sales : null)}</dd>
+          <dt>ДРР от всей выручки</dt><dd>${pct(T.drr)}</dd>
+          <dt>CTR</dt><dd>${pct(C.impr ? C.clicks / C.impr : null, 2)}</dd>
+          <dt>Цена клика</dt><dd>${rub(C.clicks ? C.spend / C.clicks : null, 2)}</dd></dl>
+        <p class="small muted" style="margin-top:10px">Расход кампаний «на все товары» распределён по товарам пропорционально их выручке.</p></div>
+    </div>
+    ${M.adsSpendOnly ? '' : `<div class="panel"><div class="panel-head"><h2>Точки роста</h2><p>Товары, которые заметно отстают от медианы каталога. Потенциал = недополученные продажи при медианной конверсии × прибыль на единицу. Это ориентир для приоритизации, а не гарантированная сумма.</p></div>
+      ${!G.enough ? stub('Для сравнения с медианой нужно минимум 3 товара с рекламными показами за период.') : ''}
+      ${G.med.margin == null && G.enough ? stub('Прибыль на единицу не посчитана ни по одному товару, поэтому оценить потенциал нельзя. Заполните себестоимость и удержания.') : ''}
+      ${G.signals.length ? table('growth', [
+        { key: 'name', label: 'Товар', sticky: 1, val: x => x.s.name, cell: x => nameCell(x.s) },
+        { key: 'kind', label: 'Сигнал', val: x => x.title, fmt: v => `<span class="pill warn">${esc(v)}</span>` },
+        { key: 'text', label: 'Что видно', nosort: 1, cell: x => `<td style="min-width:280px;max-width:440px">${x.text}</td>` },
+        { key: 'units', label: 'Доп. продажи, шт', num: 1, val: x => x.units, fmt: v => num(v) },
+        { key: 'pot', label: 'Потенциал прибыли', num: 1, val: x => x.potential, fmt: v => ok(v) ? `<b class="pos">+${rub(v)}</b>` : '<span class="faint">нет данных</span>' }],
+        G.signals, { sort: { key: 'pot', dir: -1 } }) : G.enough && G.med.margin != null ? stub('Отклонений от медианы при хорошей марже не найдено.') : ''}
+      ${G.enough ? `<p class="small faint" style="margin-top:10px">Медианы каталога: показ → корзина ${pct(G.med.i2c, 2)}, корзина → заказ ${pct(G.med.c2o)}, показов на товар ${num(G.med.impr)}, выкуп ${pct(G.med.buyout)}, маржа ${pct(G.med.margin)}.</p>` : ''}</div>`}
+    <div class="panel"><div class="panel-head"><h2>Кампании</h2></div>
+      ${table('camps', [
+        { key: 'camp', label: 'Кампания', val: c => c.camp || '—', cell: c => `<td><div>${esc(c.camp && c.camp !== '0' ? c.camp : M.adsSpendOnly ? 'из начислений' : 'без ID')}</div><div class="small faint">${esc(c.tool)}${c.place ? ', ' + esc(c.place) : ''}</div></td>` },
+        { key: 'name', label: 'Товар', val: c => c.sku ? c.name : 'Все товары', cell: c => `<td class="name"><div class="t">${c.sku ? esc(c.name) : '<b>Все товары</b>'}</div>${c.sku ? `<div class="a">SKU ${c.sku}</div>` : ''}</td>` },
+        { key: 'spend', label: 'Расход', num: 1, val: c => c.spend, fmt: v => rub(v) },
+        { key: 'sales', label: 'Продажи', num: 1, val: c => c.sales, fmt: v => rub(v) },
+        { key: 'drr', label: 'ДРР', num: 1, val: c => c.sales ? c.spend / c.sales : null, fmt: v => ok(v) ? `<span class="${v * 100 > S.settings.drrHigh ? 'neg' : ''}">${pct(v)}</span>` : '—' },
+        { key: 'impr', label: 'Показы', num: 1, val: c => c.impr, fmt: v => num(v) },
+        { key: 'clicks', label: 'Клики', num: 1, val: c => c.clicks, fmt: v => num(v) },
+        { key: 'ctr', label: 'CTR', num: 1, val: c => c.impr ? c.clicks / c.impr : null, fmt: v => pct(v, 2) },
+        { key: 'carts', label: 'В корзину', num: 1, val: c => c.carts, fmt: v => num(v) },
+        { key: 'orders', label: 'Продано, шт', num: 1, val: c => c.orders, fmt: v => num(v) },
+        { key: 'cpc', label: 'Цена клика', num: 1, val: c => c.clicks ? c.spend / c.clicks : null, fmt: v => rub(v, 2) }],
+        M.campaigns, { sort: { key: 'spend', dir: -1 } })}</div></div>`;
+}
+
+/* =====================================================================
+   12. ВКЛАДКА «ОСТАТКИ»
+   ===================================================================== */
+function renderStock() {
+  const M = S.model, el = $('#tab-stock'), set = S.settings;
+  if (!M.have.any) { el.innerHTML = emptyState(); return; }
+  const form = `<div class="form-row">
+      <label>Критично, если хватит меньше чем на, дн.<input type="number" min="1" id="thCrit" value="${set.stockCrit}"></label>
+      <label>Требует внимания — меньше чем на, дн.<input type="number" min="1" id="thWarn" value="${set.stockWarn}"></label>
+      <label>Поставку считать на, дн.<input type="number" min="7" id="thSupply" value="${set.supplyDays}"></label></div>`;
+  if (!M.have.stock) { el.innerHTML = `<div class="stack"><div class="panel"><h2>Остатки</h2><div style="margin-top:12px">${stub('Загрузите отчёт <b>«Управление остатками»</b>, чтобы увидеть сроки до обнуления и рекомендации по поставке.')}</div></div><div class="panel">${form}</div></div>`; return; }
+  const list = M.stock;
+  const cnt = st => list.filter(s => s.stock.status === st).length;
+  const buckets = [['до 7', 0, 7], ['7–14', 7, 14], ['14–30', 14, 30], ['30–60', 30, 60], ['больше 60', 60, Infinity]];
+  const bc = buckets.map(([, a, b]) => list.filter(s => s.stock.days != null && s.stock.days >= a && s.stock.days < b).length);
+  const soon = list.filter(s => s.stock.days != null).sort((a, b) => a.stock.days - b.stock.days).slice(0, 8);
+  const statusPill = st => ({ crit: '<span class="pill neg">критично</span>', warn: '<span class="pill warn">внимание</span>', ok: '<span class="pill pos">в норме</span>', nosales: '<span class="pill gray">нет продаж</span>', unknown: '<span class="pill gray">нет данных</span>' }[st]);
+  el.innerHTML = `<div class="stack">
+    <div class="panel"><div class="panel-head"><h2>Остатки на ${isoToRu(M.stockDate)}</h2><p>Скорость продаж — среднесуточные продажи за 28 дней из отчёта Ozon; если её нет — по продажам за выбранный период.</p></div>
+      <div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+        <div><div class="small muted">Критично, меньше ${set.stockCrit} дн.</div><div style="font-size:28px;font-weight:600" class="${cnt('crit') ? 'neg' : ''}">${cnt('crit')}</div></div>
+        <div><div class="small muted">Внимание, ${set.stockCrit}–${set.stockWarn} дн.</div><div style="font-size:28px;font-weight:600" class="${cnt('warn') ? 'warn' : ''}">${cnt('warn')}</div></div>
+        <div><div class="small muted">В норме</div><div style="font-size:28px;font-weight:600">${cnt('ok')}</div></div>
+        <div><div class="small muted">Без продаж</div><div style="font-size:28px;font-weight:600" class="muted">${cnt('nosales') + cnt('unknown')}</div></div>
+      </div><div style="margin-top:16px">${form}</div></div>
+    <div class="grid2">
+      <div class="panel"><div class="panel-head"><h2>Сколько дней хватит остатка</h2></div><div class="chartbox short"><canvas id="chStock"></canvas></div></div>
+      <div class="panel"><div class="panel-head"><h2>Ближе всего к обнулению</h2></div>
+        ${soon.length ? `<ol class="insights">${soon.map(s => `<li class="${s.stock.status === 'crit' ? 'neg' : s.stock.status === 'warn' ? 'warn' : 'pos'}"><span><span style="display:flex;justify-content:space-between;gap:12px"><span>${esc(short(s.name, 50))}</span><b style="white-space:nowrap">${s.stock.days} дн.</b></span><span class="small muted">арт. ${esc(s.article || '—')}, ${num(s.stock.available)} шт, обнулится ~${isoToRu(s.stock.runOut)}</span></span></li>`).join('')}</ol>` : stub('Нет товаров с продажами.')}</div>
+    </div>
+    <div class="panel"><div class="panel-head"><h2>Планирование поставок</h2><p>Правило: если остатка хватит меньше чем на ${set.stockWarn} дн. и товар не в группе C по прибыли (или по выручке, если прибыль не посчитана) — пора поставлять. Объём = скорость × ${set.supplyDays} дн. − остаток − товары в пути.</p></div>
+      ${table('stock', [
+        { key: 'name', label: 'Товар', sticky: 1, val: s => s.name, cell: nameCell },
+        { key: 'avail', label: 'Остаток, шт', num: 1, val: s => s.stock.available, fmt: v => num(v) },
+        { key: 'in', label: 'В пути, шт', num: 1, val: s => s.stock.inbound, fmt: v => num(v) },
+        { key: 'vel', label: 'Продаж в день', num: 1, val: s => s.stock.vel, fmt: v => num(v, 2) },
+        { key: 'days', label: 'Хватит, дн.', num: 1, val: s => s.stock.days, fmt: v => ok(v) ? num(v) : '—' },
+        { key: 'date', label: 'Обнулится', num: 1, val: s => s.stock.runOut, fmt: v => v ? isoToRu(v) : '—' },
+        { key: 'status', label: 'Статус', val: s => ({ crit: 0, warn: 1, ok: 2, nosales: 3, unknown: 4 })[s.stock.status], fmt: (v, s) => statusPill(s.stock.status) },
+        { key: 'abc', label: 'ABC', val: s => s.abcProfit || s.abcRevenue || null, fmt: v => v || '—' },
+        { key: 'liq', label: 'Статус Ozon', val: s => s.stock.liquidity || null, fmt: v => esc(v || '—') },
+        { key: 'fee', label: 'Плата за размещение в день', num: 1, val: s => s.stock.fee, fmt: v => v ? rub(v) : '—' },
+        { key: 'adv', label: 'Рекомендация', val: s => s.stock.advice.text, cell: s => `<td style="min-width:240px"><span class="pill ${s.stock.advice.level}" style="white-space:normal">${esc(s.stock.advice.text)}</span></td>` }],
+        list, { sort: { key: 'days', dir: 1 } })}</div></div>`;
+  mkChart('chStock', {
+    type: 'bar',
+    data: { labels: buckets.map(b => b[0] + ' дн.'), datasets: [{ data: bc, backgroundColor: [css('--neg'), css('--warn'), css('--accent'), css('--pos'), css('--faint')], borderRadius: 4 }] },
+    options: { maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => nTov(c.raw) } } }, scales: { y: { ticks: { precision: 0 } } } }
+  });
+}
+
+/* =====================================================================
+   13. ВКЛАДКА «ДАННЫЕ И НАСТРОЙКИ»
+   ===================================================================== */
+function renderData() {
+  const el = $('#tab-data'), R = S.settings.rates, M = S.model;
+  const ds = [...S.datasets].sort((a, b) => (a.type + (a.period?.from || a.snapshotDate)).localeCompare(b.type + (b.period?.from || b.snapshotDate)));
+  const skus = M.skus.filter(s => s.hasSales || s.stock);
+  const rateInput = (k, label, unit) => `<label>${label}, ${unit}<input type="number" step="0.01" min="0" data-rate="${k}" value="${R[k] ?? ''}"></label>`;
+  el.innerHTML = `<div class="stack">
+    ${apiPanel()}
+    <div class="panel"><div class="panel-head"><h2>Загруженные отчёты</h2><p>Хранятся в этом браузере. При загрузке файла за тот же период будет предложено заменить или объединить данные.</p></div>
+      ${ds.length ? table('files', [
+        { key: 'type', label: 'Тип', val: d => TYPE_LABEL[d.type] },
+        { key: 'file', label: 'Файл', val: d => d.fileName },
+        { key: 'period', label: 'Период или дата среза', val: d => d.period?.from || d.snapshotDate, fmt: (v, d) => d.period ? `${isoToRu(d.period.from)} – ${isoToRu(d.period.to)}` : d.snapshotDate ? 'срез на ' + isoToRu(d.snapshotDate) : '—' },
+        { key: 'n', label: 'Товаров', num: 1, val: d => d.type === 'ads' ? d.data.campaigns.length : Object.keys(d.data.items || {}).length || Object.keys(d.data.cost || {}).length, fmt: (v, d) => d.type === 'ads' ? `${v} кампаний` : num(v) },
+        { key: 'w', label: 'Замечания', nosort: 1, cell: d => `<td class="small ${d.warnings?.length ? 'warn' : 'faint'}" style="max-width:320px">${d.warnings?.length ? d.warnings.map(esc).join('<br>') : 'нет'}</td>` },
+        { key: 'del', label: '', nosort: 1, cell: d => d.source === 'api' ? '<td class="small faint">обновляется сам</td>' : `<td><button class="btn small danger" data-del-ds="${d.id}">Удалить</button></td>` }], ds, { sort: { key: 'type', dir: 1 } }) : stub('Отчёты ещё не загружены.')}</div>
+    <div class="panel"><div class="panel-head"><h2>Удержания Ozon и налог</h2><p>Точные суммы удержаний по SKU даёт отчёт по начислениям — если он загружен, ставки ниже используются лишь для товаров, которых в нём нет. Ставки нужны, только если работаете по отчёту о реализации, где удержаний нет. Посмотрите свои тарифы в личном кабинете и введите их — расчёты по ставкам помечаются как оценка.</p></div>
+      <div class="form-row">
+        ${rateInput('commission', 'Комиссия', '% выручки')}${rateInput('acquiring', 'Эквайринг', '% выручки')}${rateInput('logistics', 'Логистика', '₽ за шт')}
+        ${rateInput('storage', 'Хранение', '₽ за шт')}${rateInput('other', 'Прочие услуги', '₽ за шт')}${rateInput('tax', 'Налог', '% от суммы реализации')}
+        <button class="btn primary" id="ratesSave">${R.configured ? 'Обновить ставки' : 'Применить ставки'}</button>
+        ${R.configured ? '<button class="btn small" id="ratesOff">Не использовать ставки</button>' : ''}
+      </div>
+      <p class="small muted" style="margin-top:10px">${R.configured ? 'Ставки применяются. Пустое поле считается нулём.' : 'Ставки не применены: пока не загружен отчёт по начислениям, прибыль не считается.'} Налог считается от суммы реализации за вычетом возвратов — без баллов за скидки и программ партнёров (например, 6% для УСН «Доходы»); если поле пустое — прибыль показывается без налога.</p></div>
+    <div class="panel"><div class="panel-head"><h2>Категории и комиссия по категориям</h2><p>Категория подставляется из названия товара. Её можно переименовать — товары с одинаковым названием категории объединятся. Комиссия категории перекрывает общую ставку.</p></div>
+      ${skus.length ? table('catsEdit', [
+        { key: 'name', label: 'Товар', sticky: 1, val: s => s.name, cell: nameCell },
+        { key: 'cat', label: 'Категория', val: s => s.category, cell: s => `<td><input type="text" data-cat="${s.sku}" value="${esc(s.category)}" style="width:180px">${S.categories[s.sku] ? ' <span class="src manual">вручную</span>' : ''}</td>` }],
+        skus, { sort: { key: 'cat', dir: 1 } }) : stub('Нет товаров.')}
+      ${M.cats.length ? `<div class="form-row" style="margin-top:14px">${M.cats.map(c => `<label>Комиссия «${esc(c.name)}», %<input type="number" step="0.1" min="0" data-catcomm="${esc(c.name)}" value="${S.settings.catCommission[c.name] ?? ''}" placeholder="как общая"></label>`).join('')}</div>` : ''}</div>
+    <div class="panel"><div class="panel-head"><h2>Ориентир ДРР</h2></div>
+      <div class="form-row"><label>Нижняя граница, %<input type="number" min="0" id="drrLow" value="${S.settings.drrLow}"></label><label>Верхняя граница, %<input type="number" min="0" id="drrHigh" value="${S.settings.drrHigh}"></label></div></div>
+    <div class="panel"><div class="panel-head"><h2>Резервная копия</h2><p>Себестоимость, категории, план, ставки и срезы можно сохранить в файл и перенести в другой браузер. Отчёты в копию не входят — их проще загрузить заново.</p></div>
+      <div class="form-row"><button class="btn" id="exportBtn">Скачать настройки</button><label class="btn" for="importInput">Загрузить настройки</label><input type="file" id="importInput" accept=".json" hidden>
+      <button class="btn danger" id="resetBtn">Удалить все данные</button></div></div>
+  </div>`;
+}
+
+/* =====================================================================
+   14. ПЕРЕСЧЁТ И ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК
+   Любое изменение данных (загрузка, себестоимость, настройки) вызывает
+   recomputeAll(): модель строится заново, перерисовываются KPI и активная вкладка.
+   ===================================================================== */
+const RENDER = { overview: renderOverview, plan: renderPlan, units: renderUnits, products: renderProducts, ads: renderAds, stock: renderStock, data: renderData };
+function recomputeAll() {
+  try { S.model = buildModel(S.period); }
+  catch (e) { console.error(e); toast('Ошибка расчёта: ' + e.message, 'err'); return; }
+  renderHeader(); renderKPI(); renderTab();
+}
+function renderTab() {
+  const t = S.ui.tab;
+  $$('.tabs button').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === t));
+  $$('.tab').forEach(s => s.hidden = s.id !== 'tab-' + t);
+  try { RENDER[t](); } catch (e) { console.error(e); $('#tab-' + t).innerHTML = stub('Не удалось отрисовать раздел: ' + esc(e.message)); }
+}
+function goTab(t) { S.ui.tab = t; renderTab(); }
+
+/* ---------- уведомления и модальные окна ---------- */
+function toast(msg, kind = '') {
+  const d = document.createElement('div'); d.className = 'toast ' + kind; d.textContent = msg;
+  $('#toasts').appendChild(d); setTimeout(() => d.remove(), kind === 'err' ? 9000 : 5000);
+}
+function showErrors(list) {
+  const hard = list.filter(e => !e.soft), soft = list.filter(e => e.soft);
+  if (!list.length) { $('#errors').innerHTML = ''; return; }
+  $('#errors').innerHTML = (hard.length ? `<div class="errbox"><button class="x" aria-label="Закрыть" data-close-err>×</button><b>${hard.length === 1 ? 'Файл не загружен' : 'Не загружены файлы: ' + hard.length}</b><ul>${hard.map(e => `<li>${esc(e.msg)}</li>`).join('')}</ul></div>` : '')
+    + (soft.length ? `<div class="errbox" style="background:var(--warn-soft);border-color:rgba(232,176,75,.4)"><button class="x" aria-label="Закрыть" data-close-err>×</button><b>Загружено с замечаниями</b><ul>${soft.map(e => `<li>«${esc(e.file)}»: ${esc(e.msg)}</li>`).join('')}</ul></div>` : '');
+}
+function askModal(title, html, buttons) {
+  return new Promise(res => {
+    const m = $('#modal');
+    m.innerHTML = `<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="mTitle"><h2 id="mTitle">${esc(title)}</h2><p>${html}</p><div class="modal-actions">${buttons.map(([v, l, c]) => `<button class="btn ${c}" data-v="${v}">${l}</button>`).join('')}</div></div>`;
+    m.hidden = false; m.querySelector('button').focus();
+    m.onclick = e => { const b = e.target.closest('[data-v]'); if (b) { m.hidden = true; m.innerHTML = ''; res(b.dataset.v); } };
+  });
+}
+function waitLibs(ms = 8000) { return new Promise(r => { const t0 = Date.now(); (function p() { if (window.XLSX || Date.now() - t0 > ms) r(); else setTimeout(p, 150); })(); }); }
+
+/* ---------- обработчики событий (делегирование) ---------- */
+function setCost(sku, raw) {
+  const v = parseNum(raw);
+  if (raw === '' || raw == null) delete S.costs[sku];
+  else if (v == null || v < 0) { toast('Себестоимость должна быть числом не меньше нуля', 'err'); return; }
+  else S.costs[sku] = { v, ts: new Date().toISOString() };
+  save.costs(); recomputeAll();
+}
+document.addEventListener('click', e => {
+  const t = e.target;
+  const tab = t.closest('.tabs button'); if (tab) return goTab(tab.dataset.tab);
+  const th = t.closest('th[data-sort]');
+  if (th) { const id = th.closest('table').dataset.tid, k = th.dataset.sort, cur = S.ui.sort[id]; S.ui.sort[id] = { key: k, dir: cur && cur.key === k ? -cur.dir : -1 }; return renderTab(); }
+  if (t.closest('[data-close-err]')) return t.closest('.errbox').remove();
+  const gt = t.closest('[data-goto-tab]'); if (gt) return goTab(gt.dataset.gotoTab);
+  const gc = t.closest('[data-goto-cost]');
+  if (gc) { e.stopPropagation(); goTab('units'); const inp = document.getElementById('cost-' + gc.dataset.gotoCost); if (inp) { inp.scrollIntoView({ block: 'center' }); inp.focus(); } return; }
+  const rc = t.closest('[data-reset-cost]'); if (rc) { delete S.costs[rc.dataset.resetCost]; save.costs(); return recomputeAll(); }
+  const pm = t.closest('[data-plan-month]'); if (pm) { S.plan.month = pm.dataset.planMonth; save.plan(); return renderPlan(); }
+  const dsn = t.closest('[data-del-snap]'); if (dsn) { S.snapshots = S.snapshots.filter(s => s.ts !== dsn.dataset.delSnap); save.snapshots(); return renderOverview(); }
+  const dd = t.closest('[data-del-ds]');
+  if (dd) { const d = S.datasets.find(x => x.id === dd.dataset.delDs); askModal('Удалить отчёт?', `«${esc(d.fileName)}» будет удалён из браузера. Себестоимость и настройки сохранятся.`, [['yes', 'Удалить', 'danger'], ['no', 'Отмена', '']]).then(v => { if (v === 'yes') { S.datasets = S.datasets.filter(x => x !== d); save.datasets(); recomputeAll(); } }); return; }
+  if (t.closest('input,select,button,label,a')) return;
+  const ex = t.closest('[data-expand]');
+  if (ex) { const k = +ex.dataset.expand; S.ui.expanded.has(k) ? S.ui.expanded.delete(k) : S.ui.expanded.add(k); renderProductsTable(); }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.matches('input[data-cost],input[data-cat],input[data-rate]')) e.target.blur();
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-expand]')) { e.preventDefault(); e.target.click(); }
+  if (e.key === 'Enter' && e.target.matches('label.btn')) e.target.click();
+});
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.id === 'fileInput') { ingestFiles(t.files).finally(() => t.value = ''); return; }
+  if (t.id === 'periodSel') { S.period = t.value; save.period(); S.ui.expanded.clear(); return recomputeAll(); }
+  if (t.dataset.cost) return setCost(+t.dataset.cost, t.value.trim());
+  if (t.dataset.cat) { const v = t.value.trim(); if (v) S.categories[t.dataset.cat] = v; else delete S.categories[t.dataset.cat]; save.categories(); return recomputeAll(); }
+  if (t.dataset.catcomm !== undefined) { const v = parseNum(t.value); if (v == null) delete S.settings.catCommission[t.dataset.catcomm]; else S.settings.catCommission[t.dataset.catcomm] = v; save.settings(); return recomputeAll(); }
+  if (['thCrit', 'thWarn', 'thSupply', 'drrLow', 'drrHigh'].includes(t.id)) {
+    const v = parseNum(t.value); if (v == null || v < 0) return toast('Введите число', 'err');
+    const key = { thCrit: 'stockCrit', thWarn: 'stockWarn', thSupply: 'supplyDays', drrLow: 'drrLow', drrHigh: 'drrHigh' }[t.id];
+    S.settings[key] = v;
+    if (S.settings.stockWarn < S.settings.stockCrit) { S.settings.stockWarn = S.settings.stockCrit; toast('Порог «внимание» не может быть меньше критичного — выровнял', ''); }
+    save.settings(); return recomputeAll();
+  }
+  if (t.dataset.planCat) { const c = t.dataset.planCat; S.plan.cats ||= {}; S.plan.cats[c] ||= {}; S.plan.cats[c][t.dataset.f] = parseNum(t.value); save.plan(); return renderPlan(); }
+  if (t.id === 'uCat' || t.id === 'uSrc') { S.ui.filters.units[t.id === 'uCat' ? 'cat' : 'src'] = t.value; return renderUnitsTable(); }
+  if (t.id === 'pCat') { S.ui.filters.products.cat = t.value; return renderProductsTable(); }
+  if (t.id === 'importInput') { importSettings(t.files[0]).finally(() => t.value = ''); }
+});
+document.addEventListener('input', e => {
+  if (e.target.id === 'uQ') { S.ui.filters.units.q = e.target.value; renderUnitsTable(); }
+  if (e.target.id === 'pQ') { S.ui.filters.products.q = e.target.value; renderProductsTable(); }
+});
+document.addEventListener('click', e => {
+  const id = e.target.id;
+  if (id === 'planSave') {
+    S.plan.month = $('#planMonth').value || todayISO().slice(0, 7);
+    S.plan.revenue = parseNum($('#planRev').value); S.plan.profit = parseNum($('#planProfit').value);
+    save.plan(); toast('План сохранён', 'ok'); renderPlan();
+  }
+  if (id === 'ratesSave') {
+    $$('[data-rate]').forEach(i => S.settings.rates[i.dataset.rate] = parseNum(i.value));
+    S.settings.rates.configured = true; save.settings(); toast('Ставки применены, прибыль пересчитана', 'ok'); recomputeAll();
+  }
+  if (id === 'ratesOff') { S.settings.rates.configured = false; save.settings(); recomputeAll(); }
+  if (id === 'snapBtn') {
+    const M = S.model; if (!M?.have.sales) return toast('Нечего сохранять: за выбранный период нет отчёта о продажах', 'err');
+    const T = M.totals;
+    S.snapshots.push({ ts: new Date().toISOString(), period: S.period, label: S.period === 'all' ? 'все данные' : monthLabel(S.period), revenue: T.net, profit: T.profit, margin: T.margin, drr: M.have.ads ? T.drr : null, knownShare: T.net ? T.knownNet / T.net : null });
+    save.snapshots(); toast('Срез сохранён — он появится на графике тренда во вкладке «Обзор»', 'ok');
+    if (S.ui.tab === 'overview') renderOverview();
+  }
+  if (id === 'exportBtn') {
+    const blob = new Blob([JSON.stringify({ app: 'ozon-dashboard', v: 1, costs: S.costs, categories: S.categories, settings: S.settings, plan: S.plan, snapshots: S.snapshots }, null, 1)], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `ozon-dashboard-settings-${todayISO()}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+  if (id === 'resetBtn') askModal('Удалить все данные?', 'Будут удалены отчёты, себестоимость, категории, план, ставки и срезы. Это нельзя отменить.', [['yes', 'Удалить всё', 'danger'], ['no', 'Отмена', '']]).then(v => {
+    if (v !== 'yes') return;
+    Object.keys(localStorage).filter(k => k.startsWith('ozd_')).forEach(k => localStorage.removeItem(k));
+    Object.assign(S, { datasets: [], costs: {}, categories: {}, settings: loadSettings(), plan: { month: todayISO().slice(0, 7), revenue: null, profit: null, cats: {} }, snapshots: [], period: 'all' });
+    showErrors([]); recomputeAll();
+  });
+});
+async function importSettings(file) {
+  if (!file) return;
+  try {
+    const j = JSON.parse(await file.text());
+    if (j.app !== 'ozon-dashboard') throw new Error('это не файл настроек дашборда');
+    S.costs = j.costs || {}; S.categories = j.categories || {}; S.plan = j.plan || S.plan; S.snapshots = j.snapshots || [];
+    S.settings = { ...DEFAULT_SETTINGS, ...(j.settings || {}), rates: { ...DEFAULT_SETTINGS.rates, ...(j.settings?.rates || {}) } };
+    ['costs', 'categories', 'plan', 'snapshots', 'settings'].forEach(k => save[k]());
+    toast('Настройки загружены', 'ok'); recomputeAll();
+  } catch (e) { toast('Не удалось загрузить настройки: ' + e.message, 'err'); }
+}
+/* перетаскивание файлов на страницу */
+let dragDepth = 0;
+window.addEventListener('dragenter', e => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { dragDepth++; $('#drop').hidden = false; } });
+window.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; $('#drop').hidden = true; } });
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; $('#drop').hidden = true; if (e.dataTransfer?.files?.length) ingestFiles(e.dataTransfer.files); });
+
+/* =====================================================================
+   15. ДАННЫЕ ИЗ OZON API
+   Открытая с сервера BrandOS (адрес /ozon), страница сама получает отчёты из Ozon API:
+   начисления за 3 месяца, остатки на сегодня и рекламу из Ozon Performance — в тех же формах,
+   что и при разборе выгрузок. Ключи хранятся только на сервере (.env), в браузер не попадают.
+   Открытая просто как файл, страница работает по-старому — на загруженных выгрузках.
+   Если за тот же месяц загружен файл того же типа, берётся файл, а данные API за этот месяц пропускаются.
+   ===================================================================== */
+const API_URL = /^https?:$/.test(location.protocol);
+S.api = null;   // {seller:{on,at,error}, perf:{…}, lastSync, syncing, skipped:[]}
+const apiOn = () => !!(S.api && (S.api.seller.on || S.api.perf.on));
+const timeRu = iso => { const d = new Date(iso); return `${isoToRu(isoOf(d))} в ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+
+async function loadFromApi({ quiet = true } = {}) {
+  if (!API_URL) return false;
+  let j;
+  try {
+    const r = await fetch('/api/ozon/reports', { credentials: 'same-origin', cache: 'no-store' });
+    if (r.status === 401) { location.href = '/login'; return false; }
+    if (!r.ok) return false;   // страница открыта не с сервера BrandOS
+    j = await r.json();
+  } catch (e) { if (!quiet) toast('Сервер не ответил: ' + e.message, 'err'); return false; }
+  const hadApi = S.datasets.some(d => d.source === 'api');
+  const manual = S.datasets.filter(d => d.source !== 'api'), taken = [], skipped = [];
+  for (const ds of j.datasets || []) {
+    const clash = ds.period && manual.find(d => d.type === ds.type && overlaps(d.period, ds.period));
+    if (clash) skipped.push(`${TYPE_LABEL[ds.type]} за ${monthLabel(ds.period.from.slice(0, 7)).toLowerCase()}: используется файл «${clash.fileName}»`);
+    else taken.push(ds);
+  }
+  S.datasets = [...manual, ...taken];
+  S.api = { seller: j.seller, perf: j.perf, lastSync: j.lastSync, syncing: j.syncing, skipped };
+  save.datasets();
+  const keys = periodKeys();
+  if (!hadApi && taken.length && S.period === 'all' && keys.length) S.period = keys[keys.length - 1];
+  if (S.period !== 'all' && !keys.includes(S.period)) S.period = keys[keys.length - 1] || 'all';
+  save.period();
+  recomputeAll();
+  return true;
+}
+
+async function refreshFromOzon() {
+  const b = $('#apiBtn'); b.disabled = true; b.textContent = 'Обновляю…';
+  try {
+    const r = await fetch('/api/sync', { method: 'POST', credentials: 'same-origin' });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'ошибка ' + r.status);
+    for (let i = 0; i < 120; i++) {   // ждём до 6 минут: у Ozon строгие лимиты, синхронизация небыстрая
+      await new Promise(res => setTimeout(res, 3000));
+      const st = await (await fetch('/api/status', { credentials: 'same-origin', cache: 'no-store' })).json();
+      if (!st.syncing) break;
+    }
+    await loadFromApi({ quiet: false });
+    const err = S.api?.seller.error || S.api?.perf.error;
+    toast(err ? 'Обновлено с ошибкой: ' + err : 'Данные из Ozon обновлены, показатели пересчитаны', err ? 'err' : 'ok');
+  } catch (e) { toast('Не удалось обновить данные из Ozon: ' + e.message, 'err'); }
+  finally { b.disabled = false; b.textContent = 'Обновить из Ozon'; }
+}
+
+function apiPanel() {
+  if (!S.api) return '';
+  const line = (label, x, how) => !x.on
+    ? `<li><b>${label}</b> — <span class="faint">не подключено. ${how}</span></li>`
+    : `<li><b>${label}</b> — ${x.error ? `<span class="neg">ошибка: ${esc(x.error)}</span>` : `<span class="pos">подключено</span>`}${x.at ? `<span class="muted">, последние данные ${timeRu(x.at)}</span>` : ''}</li>`;
+  return `<div class="panel"><div class="panel-head"><h2>Подключение к Ozon</h2><p>Данные подтягиваются с сервера сами: при открытии страницы, раз в 10 минут и по кнопке «Обновить из Ozon». Сервер забирает их из Ozon по расписанию. Себестоимость в API нет — её по-прежнему задаёте вручную или файлом.</p></div>
+    <ul class="small" style="margin:0;padding-left:18px;line-height:1.8">
+      ${line('Ozon Seller API', S.api.seller, 'Впишите OZON_CLIENT_ID и OZON_API_KEY в .env на сервере (роль ключа — Admin read only). Даёт продажи, возвраты, удержания Ozon и остатки.')}
+      ${line('Ozon Performance API', S.api.perf, 'Реклама берётся из начислений кабинета продавца: расход по видам продвижения и по товарам (оплата за заказ), без показов и кликов. Чтобы были показы, клики и кампании, впишите OZON_PERF_CLIENT_ID и OZON_PERF_CLIENT_SECRET из performance.ozon.ru.')}
+    </ul>
+    ${S.api.skipped.length ? `<p class="small warn" style="margin-top:10px">Вместо данных API используются загруженные файлы:<br>${S.api.skipped.map(esc).join('<br>')}<br>Удалите файл, чтобы данные за этот месяц шли из API.</p>` : ''}</div>`;
+}
+document.addEventListener('click', e => { if (e.target.id === 'apiBtn') refreshFromOzon(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && apiOn()) loadFromApi(); });
+setInterval(() => { if (apiOn() && !document.hidden) loadFromApi(); }, 10 * 60 * 1000);
+
+/* ---------- старт ---------- */
+recomputeAll();
+loadFromApi();
+if (!window.Chart) waitLibs().then(() => setTimeout(() => { if (window.Chart) renderTab(); }, 600));
+</script>
+</body>
+</html>

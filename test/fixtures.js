@@ -52,9 +52,20 @@ const API = {
   'api-seller.ozon.ru/v2/analytics/stock_on_warehouses': () => ({ result: { rows: [{ sku: 555, item_code: 'B1', item_name: 'Подушка', free_to_sell_amount: 30, promised_amount: 5 }] } }),
   'api-seller.ozon.ru/v1/analytics/data': () => ({ result: { data: range(60).map(d => ({ dimensions: [{ id: '555', name: 'Подушка' }, { id: D(d) }], metrics: [3000, 2] })) } }),
   'api-seller.ozon.ru/v3/finance/transaction/totals': () => ({ result: { accruals_for_sale: 90000, sale_commission: -15000, processing_and_delivery: -9000, refunds_and_cancellations: 0, services_amount: 0, compensation_amount: 0, others_amount: 0 } }),
+  'api-seller.ozon.ru/v3/finance/transaction/list': () => ({ result: { page_count: 1, row_count: 6, operations: [
+    { operation_type: 'OperationAgentDeliveredToCustomer', operation_type_name: 'Доставка покупателю', type: 'orders', amount: 1700, accruals_for_sale: 3000, sale_commission: -900,
+      items: [{ name: 'Подушка', sku: 555 }, { name: 'Подушка', sku: 555 }],
+      services: [{ name: 'MarketplaceServiceItemDirectFlowLogistic', price: -300 }, { name: 'MarketplaceRedistributionOfAcquiringOperation', price: -100 }] },
+    { operation_type: 'MarketplaceRedistributionOfPointsForDiscounts', operation_type_name: 'Баллы за скидки', type: 'other', amount: 200, accruals_for_sale: 0, sale_commission: 0, items: [{ name: 'Подушка', sku: 555 }], services: [] },
+    { operation_type: 'ClientReturnAgentOperation', operation_type_name: 'Получение возврата, отмены, невыкупа от покупателя', type: 'returns', amount: -1050, accruals_for_sale: -1500, sale_commission: 450, items: [{ name: 'Подушка', sku: 555 }], services: [] },
+    { operation_type: 'OperationMarketplaceServiceStorage', operation_type_name: 'Услуга размещения товаров на складе', type: 'services', amount: -120, accruals_for_sale: 0, sale_commission: 0, items: [], services: [] },
+    { operation_type: 'OperationElectronicServiceStencil', operation_type_name: 'Услуга продвижения Оплата за клик', type: 'services', amount: -500, accruals_for_sale: 0, sale_commission: 0, items: [], services: [] },
+    { operation_type: 'OperationSubscriptionPremium', operation_type_name: 'Подписка Premium', type: 'services', amount: -990, accruals_for_sale: 0, sale_commission: 0, items: [], services: [] }
+  ] } }),
   // ---- Ozon Performance ----
   'api-performance.ozon.ru/api/client/token': () => ({ access_token: 'test-token', expires_in: 1800 }),
-  'api-performance.ozon.ru/api/client/campaign': () => ({ list: [{ id: '9', title: 'Поиск B1', state: 'CAMPAIGN_STATE_RUNNING' }] }),
+  'api-performance.ozon.ru/api/client/campaign/9/objects': () => ({ list: [{ id: '555' }] }),
+  'api-performance.ozon.ru/api/client/campaign': () => ({ list: [{ id: '9', title: 'Поиск B1', state: 'CAMPAIGN_STATE_RUNNING', advObjectType: 'SKU' }] }),
   'api-performance.ozon.ru/api/client/statistics/daily/json': () => ({ rows: range(30).map(d => ({ id: '9', title: 'Поиск B1', date: D(d), views: '2000', clicks: '20', moneySpent: '500,00', orders: '1', ordersMoney: '2500,00' })) }),
   // ---- amoCRM ----
   'test.amocrm.ru/api/v4/leads/pipelines': () => ({ _embedded: { pipelines: [{ id: 7, is_main: true, _embedded: { statuses: [

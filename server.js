@@ -60,6 +60,24 @@ function dashboard() {
   return { ...buildDashboard({ raw: db.raw, enabled: enabledKeys(), settings: getSettings() }), lastSync: db.lastSync, syncing: isSyncing(), ai: aiEnabled() };
 }
 
+// Отчёты для ozon.html: только из подключённых источников
+function ozonReports() {
+  const db = getDb(), on = enabledKeys();
+  const part = key => {
+    const st = db.status[key] || {}, raw = db.raw[key];
+    if (!on.includes(key)) return { on: false, datasets: [] };
+    return { on: true, at: st.lastOkAt || null, error: st.error || raw?.reportsError || null, datasets: raw?.reports || [] };
+  };
+  const seller = part('ozon'), perf = part('ozonPerf');
+  return {
+    seller: { on: seller.on, at: seller.at, error: seller.error },
+    perf: { on: perf.on, at: perf.at, error: perf.error },
+    // Реклама из начислений нужна, только если за этот месяц нет данных Ozon Performance
+    datasets: [...seller.datasets.filter(d => !(d.data?.spendOnly && perf.datasets.some(x => x.period?.from === d.period?.from))), ...perf.datasets],
+    lastSync: db.lastSync, syncing: isSyncing()
+  };
+}
+
 // Полная картина для Центра решений и ИИ-чата
 const build = {
   settings: getSettings,
@@ -136,6 +154,12 @@ async function handle(req, res) {
     res.writeHead(200, HTML_HEADERS);
     return fs.createReadStream(path.join(ROOT, 'index.html')).pipe(res);
   }
+  // «Аналитика Ozon»: та же страница, что работает с Excel-выгрузками, но данные приходят из API
+  if (method === 'GET' && (p === '/ozon' || p === '/ozon.html')) {
+    res.writeHead(200, HTML_HEADERS);
+    return fs.createReadStream(path.join(ROOT, 'ozon.html')).pipe(res);
+  }
+  if (method === 'GET' && p === '/api/ozon/reports') return send(res, 200, ozonReports());
   if (method === 'GET' && p === '/api/dashboard') return send(res, 200, dashboard());
   if (method === 'GET' && p === '/api/status') {
     return send(res, 200, { sources: sourceStatus(), syncing: isSyncing(), lastSync: getDb().lastSync, ai: aiEnabled(), auth: authEnabled() });

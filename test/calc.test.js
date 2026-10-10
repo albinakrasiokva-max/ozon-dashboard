@@ -135,6 +135,48 @@ test('продажи: заказы, средний чек, возвраты', ()
   assert.equal(dash.sales.byDay[13], 7000 - (D(0) === D(3) ? 1000 : 0));
 });
 
+test('Аналитика Ozon: начисления, остатки и реклама в формате страницы ozon.html', () => {
+  const { reports } = getDb().raw.ozon, ads = getDb().raw.ozonPerf.reports;
+  const acc = reports.filter(d => d.type === 'accruals');
+  assert.equal(acc.length, 3, 'начисления за 3 месяца');
+  const cur = acc[2];
+  assert.equal(cur.period.from, D(0).slice(0, 8) + '01');
+  assert.equal(cur.period.to, D(0));
+  const it = cur.data.items[555];
+  assert.deepEqual(it.sold, { soldQty: 2, retQty: 1, soldAmt: 3000, soldLoyal: 200, retAmt: 1500, retLoyal: 0 });
+  assert.equal(it.fees.commission, 450, 'комиссия за продажу минус возвращённая при возврате');
+  assert.equal(it.fees.logistics, 300); assert.equal(it.fees.acquiring, 100);
+  assert.equal(it.article, 'B1', 'артикул подставлен из остатков');
+  assert.equal(cur.data.unassigned.storage, 120, 'хранение без товара — общие удержания');
+  assert.equal(cur.data.adsOther, 500); assert.equal(cur.data.adsSub, 990);
+  assert.ok(cur.data.hasSales);
+
+  const st = reports.find(d => d.type === 'stock').data.items[555];
+  assert.equal(st.available, 30); assert.equal(st.inbound, 5);
+  assert.equal(st.avgDaily, 2, '56 заказанных штук за 28 дней');
+  assert.equal(st.daysLeft, 15);
+
+  const fromAcc = reports.filter(d => d.data.spendOnly);
+  assert.equal(fromAcc.length, 3, 'реклама из начислений — на случай, если нет ключей Performance');
+  assert.deepEqual(fromAcc[2].data.campaigns.map(c => [c.sku, c.tool, c.spend]), [[0, 'Услуга продвижения Оплата за клик', 500]], 'подписка Premium не входит — она учитывается отдельно');
+
+  assert.equal(ads.length, 3);
+  const c = ads[2].data.campaigns[0];
+  assert.equal(c.sku, 555, 'кампания с одним товаром привязана к SKU');
+  assert.equal(c.spend, 15000); assert.equal(c.impr, 60000); assert.equal(c.tool, 'Оплата за клик');
+});
+
+test('ошибка в начислениях не ломает основную синхронизацию Ozon', async () => {
+  installMock({ 'api-seller.ozon.ru/v3/finance/transaction/list': 403 });
+  await syncAll();
+  const oz = sourceStatus().find(s => s.key === 'ozon');
+  assert.equal(oz.error, null);
+  assert.equal(getDb().raw.ozon.reports, null);
+  assert.match(getDb().raw.ozon.reportsError, /нет доступа \(403\)/);
+  installMock();
+  await syncAll();
+});
+
 test('ошибка ключа показывается понятным текстом, прошлые данные сохраняются', async () => {
   installMock({ 'api-seller.ozon.ru': 401 });
   await syncAll();
@@ -159,6 +201,9 @@ test('сервер без ключей отдаёт index.html и демо-фл�
     assert.equal(d.kpi.revenue, undefined, 'без источника цифры не выдумываются');
     const st = await (await fetchReal('http://127.0.0.1:3917/api/status')).json();
     assert.ok(st.sources.every(s => !s.enabled));
+    assert.match(await (await fetchReal('http://127.0.0.1:3917/ozon')).text(), /Аналитика магазина на Ozon/);
+    const oz = await (await fetchReal('http://127.0.0.1:3917/api/ozon/reports')).json();
+    assert.equal(oz.seller.on, false); assert.deepEqual(oz.datasets, []);
     const r = await fetchReal('http://127.0.0.1:3917/.env');
     assert.equal(r.status, 404, '.env не отдаётся');
   } finally { p.kill(); }
