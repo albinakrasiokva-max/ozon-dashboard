@@ -55,6 +55,8 @@ test('PUBLIC_ACCESS=1 — открывается без пароля', async () 
     for (let i = 0; i < 50; i++) { try { await req('http://127.0.0.1:3963/api/health'); break; } catch { await new Promise(r => setTimeout(r, 100)); } }
     assert.equal((await req('http://127.0.0.1:3963/')).status, 200);
     assert.equal((await req('http://127.0.0.1:3963/api/dashboard')).status, 200);
+    const lg = await req('http://127.0.0.1:3963/login');
+    assert.equal(lg.status, 302); assert.equal(lg.headers.location, '/', 'старая ссылка на вход ведёт на главную');
     const st = JSON.parse((await req('http://127.0.0.1:3963/api/status')).body);
     assert.equal(st.auth, false);
     assert.match(log, /открыт без пароля/);

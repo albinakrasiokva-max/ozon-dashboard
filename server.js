@@ -119,6 +119,8 @@ async function handle(req, res) {
       return res.end();
     }
   }
+  // Без пароля страницы входа нет — старые ссылки на /login ведут на главную
+  if (p === '/login' && !authEnabled()) { res.writeHead(302, { Location: '/' }); return res.end(); }
   if (p === '/logout' && method === 'POST') {
     res.writeHead(302, { Location: authEnabled() ? '/login' : '/', 'Set-Cookie': clearCookie(req) });
     return res.end();
