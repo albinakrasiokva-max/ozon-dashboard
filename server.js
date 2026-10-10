@@ -14,7 +14,7 @@ import { aiEnabled, chat } from './lib/ai.js';
 import { snapshotForAI } from './lib/snapshot.js';
 import { startTelegram } from './lib/telegram.js';
 import { runDecisions, maybeDailyRun, refreshStatuses, act, isRunning } from './lib/decisions.js';
-import { authEnabled, checkStartup, isAuthed, checkPassword, tooManyFails, clientIp, makeSession, sessionCookie, clearCookie, sameOrigin, loginPage } from './lib/auth.js';
+import { authEnabled, publicAccess, checkStartup, isAuthed, checkPassword, tooManyFails, clientIp, makeSession, sessionCookie, clearCookie, sameOrigin, loginPage } from './lib/auth.js';
 import { stopTelegram } from './lib/telegram.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -271,6 +271,7 @@ for (const sig of ['SIGTERM', 'SIGINT']) {
 server.listen(PORT, HOST, () => {
   const on = enabledKeys();
   console.log(`BrandOS: http://${HOST}:${PORT}${authEnabled() ? ' (вход по паролю)' : ''}`);
+  if (publicAccess()) console.warn('ВНИМАНИЕ: PUBLIC_ACCESS=1 — дашборд открыт без пароля, его видит любой, у кого есть ссылка.');
   console.log(on.length ? `Подключены: ${on.join(', ')}` : 'Ключей в .env нет — дашборд работает на демо-данных.');
   if (process.env.NO_SYNC === '1') return console.log('NO_SYNC=1 — синхронизация и бот отключены, показываются сохранённые данные.');
   const min = startScheduler(getSettings().syncMinutes);

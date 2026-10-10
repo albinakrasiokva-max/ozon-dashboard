@@ -47,6 +47,20 @@ test('без пароля в сеть не запускается, со слаб
   assert.match(weak.stderr, /слишком короткий/);
 });
 
+test('PUBLIC_ACCESS=1 — открывается без пароля', async () => {
+  const p = spawn(process.execPath, ['server.js'], { cwd: ROOT, env: { PATH: process.env.PATH, PORT: '3963', HOST: '0.0.0.0', DATA_DIR: path.join(DIR, 'pub'), PUBLIC_ACCESS: '1', NO_SYNC: '1' } });
+  let log = '';
+  p.stderr.on('data', d => { log += d; });
+  try {
+    for (let i = 0; i < 50; i++) { try { await req('http://127.0.0.1:3963/api/health'); break; } catch { await new Promise(r => setTimeout(r, 100)); } }
+    assert.equal((await req('http://127.0.0.1:3963/')).status, 200);
+    assert.equal((await req('http://127.0.0.1:3963/api/dashboard')).status, 200);
+    const st = JSON.parse((await req('http://127.0.0.1:3963/api/status')).body);
+    assert.equal(st.auth, false);
+    assert.match(log, /открыт без пароля/);
+  } finally { p.kill(); }
+});
+
 test('без входа: страница ведёт на /login, API отвечает 401, health открыт', async () => {
   const page = await req(base + '/');
   assert.equal(page.status, 302); assert.equal(page.headers.location, '/login');
