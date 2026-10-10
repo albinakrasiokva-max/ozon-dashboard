@@ -50,6 +50,7 @@ const API = {
   }],
   // ---- Ozon Seller ----
   'api-seller.ozon.ru/v2/analytics/stock_on_warehouses': () => ({ result: { rows: [{ sku: 555, item_code: 'B1', item_name: 'Подушка', free_to_sell_amount: 30, promised_amount: 5 }] } }),
+  'api-seller.ozon.ru/v4/product/info/stocks': () => ({ cursor: '', total: 1, items: [{ offer_id: 'B1', product_id: 1, stocks: [{ type: 'fbo', sku: 555, present: 30, reserved: 2 }] }] }),
   'api-seller.ozon.ru/v1/analytics/data': () => ({ result: { data: range(60).map(d => ({ dimensions: [{ id: '555', name: 'Подушка' }, { id: D(d) }], metrics: [3000, 2] })) } }),
   'api-seller.ozon.ru/v3/finance/transaction/totals': () => ({ result: { accruals_for_sale: 90000, sale_commission: -15000, processing_and_delivery: -9000, refunds_and_cancellations: 0, services_amount: 0, compensation_amount: 0, others_amount: 0 } }),
   'api-seller.ozon.ru/v3/finance/transaction/list': () => ({ result: { page_count: 1, row_count: 6, operations: [

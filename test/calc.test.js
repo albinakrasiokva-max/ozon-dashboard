@@ -166,6 +166,18 @@ test('Аналитика Ozon: начисления, остатки и рекл�
   assert.equal(c.spend, 15000); assert.equal(c.impr, 60000); assert.equal(c.tool, 'Оплата за клик');
 });
 
+test('старый метод остатков отключён (404) — остатки берутся из /v4/product/info/stocks', async () => {
+  installMock({ 'api-seller.ozon.ru/v2/analytics/stock_on_warehouses': 404 });
+  await syncAll();
+  const oz = sourceStatus().find(s => s.key === 'ozon');
+  assert.equal(oz.error, null);
+  assert.deepEqual(getDb().raw.ozon.stocks, [{ article: 'B1', qty: 28, inWay: 0 }], 'в наличии 30, из них 2 в резерве');
+  const st = getDb().raw.ozon.reports.find(d => d.type === 'stock').data.items[555];
+  assert.equal(st.available, 28); assert.equal(st.total, 30);
+  installMock();
+  await syncAll();
+});
+
 test('ошибка в начислениях не ломает основную синхронизацию Ozon', async () => {
   installMock({ 'api-seller.ozon.ru/v3/finance/transaction/list': 403 });
   await syncAll();
@@ -182,7 +194,7 @@ test('ошибка ключа показывается понятным текс
   await syncAll();
   const oz = sourceStatus().find(s => s.key === 'ozon');
   assert.equal(oz.ok, false);
-  assert.match(oz.error, /Ozon Seller: ключ не принят \(401\)/);
+  assert.match(oz.error, /Ozon Seller \(\/v[^)]+\): ключ не принят \(401\)/, 'в ошибке виден адрес метода');
   assert.ok(!oz.error.includes('oz-test'), 'ключ в тексте ошибки');
   assert.ok(getDb().raw.ozon.sales.length > 0, 'прошлые данные Ozon остались');
   installMock();
