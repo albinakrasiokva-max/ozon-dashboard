@@ -196,7 +196,7 @@ test('старые финансовые методы отключены — на
   const raw = getDb().raw.ozon;
   const cur = raw.reports.filter(d => d.type === 'accruals')[2];
   const it = cur.data.items[555];
-  assert.deepEqual(it.sold, { soldQty: 2, retQty: 0, soldAmt: 3000, soldLoyal: 0, retAmt: 0, retLoyal: 0 }, 'выручка = итог + услуги + комиссия');
+  assert.deepEqual(it.sold, { soldQty: 2, retQty: 0, soldAmt: 2400, soldLoyal: 600, retAmt: 0, retLoyal: 0 }, 'выручка по цене продавца: 2400 + 600 баллов');
   assert.equal(it.fees.commission, 900); assert.equal(it.fees.logistics, 300); assert.equal(it.fees.acquiring, 100);
   assert.equal(cur.data.adsSub, 990, 'подписка без товара');
   assert.equal(raw.finance[1].payout, 710, 'к выплате = сумма начислений месяца');
@@ -263,3 +263,21 @@ async function fetchReal(url) {
     req.end();
   });
 }
+
+test('Ozon by-day: реальный образец продажи из кабинета раскладывается без потерь', async () => {
+  const { accrualToOps } = await import('../lib/connectors/ozon.js');
+  const { accrualsDataset } = await import('../lib/ozonReports.js');
+  const types = { 29: 'Доставка до места выдачи', 32: 'Логистика' };
+  const real = { accrual_id: 58425128776, date: '2026-08-01', total_amount: { amount: '318.23', currency: 'RUB' }, accrued_category: 'POSTING',
+    posting: { delivery_schema: 'Fbo', products: [{ sku: 3019824560, quantity: 1,
+      delivery: { total_accrued: { amount: '-74.5' }, services: [{ type_id: 32, accrued: { amount: '-67' } }, { type_id: 29, accrued: { amount: '-7.5' } }] },
+      commission: { seller_price: { amount: '689' }, sale_price: { amount: '277.14' }, sale_commission: { amount: '-296.27' }, commission: { amount: '-296.27' },
+        commission_ratio: 'value:"0.430000"', sale_amount: { amount: '689' }, coinvestment: { amount: '2.77' }, bonus: { amount: '409.09' } } }] },
+    item_fees: null, non_item_fee: null, container_fees: null };
+  const ops = accrualToOps(real, types);
+  near(ops.reduce((s, o) => s + o.amount, 0), 318.23, 0.01, 'к выплате');
+  const it = accrualsDataset(ops, { from: '2026-08-01', to: '2026-08-31' }).data.items[3019824560];
+  assert.deepEqual(it.sold, { soldQty: 1, retQty: 0, soldAmt: 279.91, soldLoyal: 409.09, retAmt: 0, retLoyal: 0 }, 'выручка 689 = 279,91 + 409,09 баллов');
+  assert.equal(it.fees.commission, 296.27);
+  assert.equal(it.fees.logistics, 74.5);
+});
