@@ -895,7 +895,7 @@ function resolveCost(sku, rc) {
 function newSku(sku) {
   return {
     sku: +sku, name: '', article: '', category: '',
-    soldQty: 0, retQty: 0, soldAmt: 0, soldLoyal: 0, retAmt: 0, retLoyal: 0, inReal: false,
+    soldQty: 0, retQty: 0, soldAmt: 0, soldLoyal: 0, retAmt: 0, retLoyal: 0, comp: 0, inReal: false,
     ads: { direct: 0, shared: 0, total: 0, impr: 0, clicks: 0, carts: 0, orders: 0, sales: 0, campaigns: 0 },
     accr: null
   };
@@ -924,6 +924,7 @@ function buildModel(pk) {
       const s = get(it.sku); s.name ||= it.name; s.article ||= it.article;
       if (it.sold.soldQty || it.sold.retQty || it.sold.soldAmt) s.inReal = true;
       for (const k of SK) s[k] += it.sold[k];
+      s.comp += it.comp || 0;   // компенсации Ozon по товару — доход
     }
     if (real.length) {   // сверка: почему выручка отличается от отчёта о реализации
       const rNet = sum(real.flatMap(d => Object.values(d.data.items)), it => it.soldAmt + it.soldLoyal - it.retAmt - it.retLoyal);
@@ -973,12 +974,16 @@ function buildModel(pk) {
   const totalNet = sum(all, s => Math.max(0, s.soldAmt - s.retAmt));
   const accNet = sum(all.filter(s => s.accr), s => Math.max(0, s.soldAmt - s.retAmt));
 
+  // Компенсации и выкупы без товара — доход, делим на товары пропорционально выручке
+  M.sharedIncome = sum(acc, d => (d.data.income?.compensation || 0) + (d.data.income?.buyout || 0));
   for (const s of all) {
     s.category = categoryOf(s);
-    // Выручка — как доход в документах Ozon («Отчёт о реализации»): реализовано − возвраты, без баллов.
+    if (totalNet > 0) s.comp += M.sharedIncome * Math.max(0, s.soldAmt - s.retAmt) / totalNet;
+    // Выручка — как доходы в документах Ozon: реализация + выкупы маркетплейсом + компенсации, без баллов.
     // Баллы за скидки Ozon доплачивает за покупателя и в своих актах вычитает из вознаграждения —
     // так же и здесь: они уменьшают комиссию. Прибыль и выплата от этого не меняются.
-    s.gross = s.soldAmt;
+    // Доходы как в «Финансы → Документы»: реализация (с выкупами маркетплейсом) + компенсации
+    s.gross = s.soldAmt + s.comp;
     s.returns = s.retAmt;
     s.net = s.gross - s.returns;
     s.points = s.soldLoyal - s.retLoyal;
@@ -988,12 +993,12 @@ function buildModel(pk) {
     s.cost = resolveCost(s.sku, rc);
     s.cogs = s.cost.v != null ? s.cost.v * s.netQty : null;
     // Реклама: прямая + доля общих кампаний пропорционально выручке
-    s.ads.shared = totalNet > 0 ? M.sharedAds * Math.max(0, s.net) / totalNet : 0;
+    s.ads.shared = totalNet > 0 ? M.sharedAds * Math.max(0, s.soldAmt - s.retAmt) / totalNet : 0;   // та же база, что и totalNet
     // Удержания площадки: из отчёта по начислениям, иначе по заданным ставкам
     const f = blankFees();
     if (s.accr) {
       Object.assign(f, s.accr);
-      if (accNet > 0) { const share = Math.max(0, s.net) / accNet; for (const k of ['commission', 'acquiring', 'logistics', 'storage', 'penalties', 'other']) f[k] += accUnassigned[k] * share; }
+      if (accNet > 0) { const share = Math.max(0, s.soldAmt - s.retAmt) / accNet; for (const k of ['commission', 'acquiring', 'logistics', 'storage', 'penalties', 'other']) f[k] += accUnassigned[k] * share; }
       if (M.have.ads) f.ads = 0;   // реклама по SKU берётся из отчёта по продвижению — не задваиваем
       s.feeSrc = 'report';
     } else if (R.configured) {
@@ -1008,9 +1013,9 @@ function buildModel(pk) {
     f.commission -= s.points;
     s.fees = f;
     s.ads.total = s.ads.direct + s.ads.shared + (f.ads || 0);
-    // Налог — от суммы реализации: «Продажи → Выручка» минус «Возврат выручки» (в отчёте о реализации это
-    // «Реализовано на сумму»). Баллы за скидки и программы партнёров в налоговую базу не входят.
-    s.taxBase = Math.max(0, s.soldAmt - s.retAmt);
+    // Налог — от доходов, как в «Финансы → Документы»: реализация минус возвраты, выкупы маркетплейсом
+    // и компенсации. Баллы за скидки и программы партнёров в налоговую базу не входят.
+    s.taxBase = Math.max(0, s.soldAmt - s.retAmt + s.comp);
     s.tax = taxRate != null ? s.taxBase * taxRate : 0;
     s.feesTotal = f.commission + f.acquiring + f.logistics + f.storage + f.penalties + f.other;
     // Прибыль считается только когда известны и себестоимость, и удержания
@@ -1276,7 +1281,7 @@ function renderKPI() {
       <div class="legend"><span><i style="background:var(--accent)"></i>из отчёта ${pct(cs.report, 0)}</span><span><i style="background:var(--warn)"></i>вручную ${pct(cs.manual, 0)}</span><span><i style="background:var(--neg)"></i>нет ${pct(cs.none, 0)}</span></div></div>
     <div class="k"><div class="lbl">Чистая прибыль</div><div class="val ${T.profit < 0 ? 'neg' : ''}">${rub(T.profit)}</div><div class="note">${profitNote}</div></div>
     <div class="k"><div class="lbl">Налог к уплате</div><div class="val">${noReal || !M.taxSet ? '—' : rub(taxSum)}</div>
-      <div class="note">${noReal ? 'нет отчёта о продажах' : !M.taxSet ? '<button class="linkbtn" data-goto-tab="data">задайте ставку налога</button>' : `${num(S.settings.rates.tax, S.settings.rates.tax % 1 ? 1 : 0)}% от суммы реализации ${rub(taxBase)}; Ozon его не удерживает`}</div></div>
+      <div class="note">${noReal ? 'нет отчёта о продажах' : !M.taxSet ? '<button class="linkbtn" data-goto-tab="data">задайте ставку налога</button>' : `${num(S.settings.rates.tax, S.settings.rates.tax % 1 ? 1 : 0)}% от доходов ${rub(taxBase)}; Ozon его не удерживает`}</div></div>
     <div class="k"><div class="lbl">Маржа и ROI</div><div class="val">${pct(T.margin)}</div><div class="note">ROI ${pct(T.roi, 0)}${T.profit != null ? ' на вложенную себестоимость' : ''}</div></div>
     <div class="k"><div class="lbl">Реклама</div><div class="val">${M.have.ads ? rub(T.ads) : '—'}</div>
       <div class="note">${M.have.ads ? `ДРР ${pct(T.drr)} <span class="pill ${T.drr * 100 > S.settings.drrHigh ? 'neg' : T.drr * 100 < S.settings.drrLow ? 'acc' : 'pos'}">${T.drr * 100 > S.settings.drrHigh ? 'выше нормы' : T.drr * 100 < S.settings.drrLow ? 'ниже нормы' : 'в норме'}</span>` : 'нет отчёта по продвижению за период'}</div></div>

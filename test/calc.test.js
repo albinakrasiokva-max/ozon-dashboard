@@ -281,3 +281,18 @@ test('Ozon by-day: реальный образец продажи из каби�
   assert.equal(it.fees.commission, 296.27);
   assert.equal(it.fees.logistics, 74.5);
 });
+
+test('Ozon: доходы как в документах — выкупы маркетплейсом и компенсации входят в выручку', async () => {
+  const { accrualsDataset } = await import('../lib/ozonReports.js');
+  const ops = [
+    { operation_type_name: 'Доставка покупателю', amount: 700, accruals_for_sale: 1000, sale_commission: -300, items: [{ sku: 555 }], services: [] },
+    { operation_type_name: 'Товарная компенсация', amount: 422, accruals_for_sale: 0, sale_commission: 0, items: [], services: [] }
+  ];
+  const ds = accrualsDataset(ops, { from: '2026-08-01', to: '2026-08-31' }, {}, [{ sku: 555, qty: 2, amount: 4093 }]);
+  const it = ds.data.items[555];
+  assert.equal(it.sold.soldAmt, 5093, 'выкуп — как продажа товара');
+  assert.equal(it.sold.soldQty, 3);
+  assert.equal(it.buyout, 4093);
+  assert.equal(ds.data.income.compensation, 422, 'компенсация — доход, а не удержание');
+  assert.equal(ds.data.unassigned.other, 0);
+});
