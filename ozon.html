@@ -305,13 +305,14 @@ const DEFAULT_SETTINGS = {
   stockCrit: 7, stockWarn: 14, supplyDays: 30,       // пороги остатков и горизонт поставки, дней
   minLot: 300,                                        // партия поставки одного товара: не меньше и кратно, шт
   otherCosts: [],                                     // другие расходы в месяц: [{name, v}]
+  taxContrib: { fixed: 57390, onePct: true },         // страховые взносы ИП, уменьшающие налог УСН
   drrLow: 7, drrHigh: 15,                             // ориентир ДРР, %
   rates: { configured: false, commission: null, acquiring: null, logistics: null, storage: null, other: null, tax: null },
   catCommission: {}                                   // комиссия по категории, % (перекрывает общую)
 };
 function loadSettings() {
   const s = LS.get('settings', {});
-  return { ...DEFAULT_SETTINGS, ...s, otherCosts: Array.isArray(s.otherCosts) ? s.otherCosts : [], rates: { ...DEFAULT_SETTINGS.rates, ...(s.rates || {}) }, catCommission: { ...(s.catCommission || {}) } };
+  return { ...DEFAULT_SETTINGS, ...s, otherCosts: Array.isArray(s.otherCosts) ? s.otherCosts : [], taxContrib: { ...DEFAULT_SETTINGS.taxContrib, ...(s.taxContrib || {}) }, rates: { ...DEFAULT_SETTINGS.rates, ...(s.rates || {}) }, catCommission: { ...(s.catCommission || {}) } };
 }
 const S = {
   datasets: LS.get('datasets', []),     // загруженные отчёты (уже разобранные и свёрнутые по SKU)
@@ -1540,18 +1541,39 @@ function renderFinance() {
       months, { sort: { key: 'k', dir: 1 }, foot: `<td>Итого</td><td class="num">${rub(sum(months, m => m.F.income))}</td><td class="num">${rub(sum(months, m => m.F.fees))}</td><td class="num">${rub(sum(months, m => m.F.ads))}</td><td class="num">${M.taxSet ? rub(sum(months, m => m.F.tax)) : '—'}</td><td class="num">${rub(sum(months, m => m.F.afterTax))}</td><td class="num">${rub(sum(months, m => m.F.cogs))}</td><td class="num">${signed(sum(months, m => m.F.profit))}</td><td></td>` })}</div>` : '';
 
   // --- 3. Налоги по кварталам ---
-  const qs = {};
-  for (const m of months) { const [y, mm] = m.k.split('-').map(Number), q = `${y}-${Math.ceil(mm / 3)}`; (qs[q] ||= { y, q: Math.ceil(mm / 3), base: 0, tax: 0, n: 0 }); qs[q].base += sum(m.M.skus, s => s.taxBase || 0); qs[q].tax += m.F.tax; qs[q].n++; }
-  const due = (y, q) => q < 4 ? `до 28 ${['апреля', 'июля', 'октября'][q - 1]} ${y}` : `по итогам года: ИП — до 28 апреля ${y + 1}, ООО — до 28 марта ${y + 1}`;
-  const taxes = `<div class="panel"><div class="panel-head"><h2>Налоги</h2><p>Ozon налог не удерживает — его платите вы. Авансы по УСН — по итогам каждого квартала.</p></div>
-    ${!M.taxSet ? stub('Задайте ставку налога во вкладке <button class="linkbtn" data-goto-tab="data">«Данные и настройки»</button> (например, 6% для УСН «Доходы»).') : `<div class="bigpair" style="margin-bottom:14px"><div><div class="small muted">Налог за ${esc(periodName)}</div><div class="v">${rub(F.tax)}</div></div><div><div class="small muted">Ставка</div><div class="v">${num(taxRate, taxRate % 1 ? 1 : 0)}%</div></div></div>
+  // УСН «Доходы» у ИП: налог нарастающим итогом с начала года уменьшается на страховые взносы —
+  // фиксированные за год и 1% с доходов свыше 300 000 ₽ (оба можно учитывать до их уплаты).
+  // Аванс за квартал = (налог с начала года − взносы с начала года, не меньше 0) − авансы за прошлые кварталы.
+  const TC = set.taxContrib, qs = {};
+  for (const m of months) { const [y, mm] = m.k.split('-').map(Number), q = Math.ceil(mm / 3); (qs[`${y}-${q}`] ||= { y, q, base: 0, n: 0 }); qs[`${y}-${q}`].base += sum(m.M.skus, s => s.taxBase || 0); qs[`${y}-${q}`].n++; }
+  const qList = Object.values(qs).sort((a, b) => a.y - b.y || a.q - b.q), years = {};
+  for (const r of qList) {
+    const Y = years[r.y] ||= { inc: 0, fix: 0, one: 0, pay: 0, onePct: 0 };
+    Y.inc += r.base;
+    const taxCum = Y.inc * (taxRate || 0) / 100;
+    const onePct = TC.onePct ? 0.01 * Math.max(0, Y.inc - 300000) : 0;
+    const fixCum = Math.min(taxCum, +TC.fixed || 0), oneCum = Math.min(taxCum - fixCum, onePct), payCum = taxCum - fixCum - oneCum;
+    Object.assign(r, { tax: taxCum - (Y.taxCum || 0), fix: fixCum - Y.fix, one: oneCum - Y.one, pay: payCum - Y.pay });
+    Object.assign(Y, { taxCum, fix: fixCum, one: oneCum, pay: payCum, onePct });
+  }
+  const due = (y, q) => q < 4 ? `до 28 ${['апреля', 'июля', 'октября'][q - 1]} ${y}` : `до 28 апреля ${y + 1}, по итогам года`;
+  const yearNotes = Object.entries(years).map(([y, Y]) => `${y}: доходы ${rub(Y.inc)}, налог ${rub(Y.taxCum)}, вычтено взносов ${rub(Y.fix + Y.one)}, к уплате <b>${rub(Y.pay)}</b>.${TC.onePct ? ` Взнос 1% за ${y} год — ${rub(Y.onePct)}${Y.onePct > 0 ? `, заплатить до 1 июля ${+y + 1}` : ' (доходы пока не больше 300 000 ₽)'}.` : ''}`);
+  const taxes = `<div class="panel"><div class="panel-head"><h2>Налоги</h2><p>УСН «Доходы», ИП. Ozon налог не удерживает — его платите вы. Налог уменьшается на страховые взносы; авансы — по итогам каждого квартала.</p></div>
+    ${!M.taxSet ? stub('Задайте ставку налога во вкладке <button class="linkbtn" data-goto-tab="data">«Данные и настройки»</button> (например, 6% для УСН «Доходы»).') : `
+    <div class="form-row" style="margin-bottom:14px">
+      <label>Фиксированные взносы за год, ₽<input type="number" min="0" step="1" id="taxFixed" value="${TC.fixed ?? ''}"></label>
+      <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="taxOnePct" ${TC.onePct ? 'checked' : ''}> Вычитать 1% с доходов свыше 300 000 ₽</label></div>
     ${table('finTax', [
       { key: 'q', label: 'Квартал', val: r => r.y * 10 + r.q, fmt: (v, r) => `${r.q} квартал ${r.y}${r.n < 3 ? ` <span class="small muted">(${r.n} из 3 мес.)</span>` : ''}` },
       { key: 'b', label: 'Доходы', num: 1, val: r => r.base, fmt: v => rub(v) },
-      { key: 't', label: 'Налог', num: 1, val: r => r.tax, fmt: v => rub(v) },
+      { key: 't', label: `Налог ${num(taxRate, taxRate % 1 ? 1 : 0)}%`, num: 1, val: r => r.tax, fmt: v => rub(v) },
+      { key: 'f', label: '− Фикс. взносы', num: 1, val: r => r.fix, fmt: v => v ? rub(-v) : '—' },
+      { key: 'o', label: '− Взносы 1%', num: 1, val: r => r.one, fmt: v => v ? rub(-v) : '—' },
+      { key: 'p', label: 'К уплате', num: 1, val: r => r.pay, fmt: v => `<b>${rub(v)}</b>` },
       { key: 'd', label: 'Срок уплаты', val: r => r.y * 10 + r.q, fmt: (v, r) => due(r.y, r.q) }],
-      Object.values(qs), { sort: { key: 'q', dir: 1 } })}
-    <p class="small muted" style="margin-top:10px">ИП на УСН «Доходы» может уменьшить налог на страховые взносы — здесь это не учтено, сверяйте сумму с бухгалтерией.</p>`}</div>`;
+      qList, { sort: { key: 'q', dir: 1 }, foot: `<td>Итого</td><td class="num">${rub(sum(qList, r => r.base))}</td><td class="num">${rub(sum(qList, r => r.tax))}</td><td class="num">${rub(-sum(qList, r => r.fix))}</td><td class="num">${rub(-sum(qList, r => r.one))}</td><td class="num"><b>${rub(sum(qList, r => r.pay))}</b></td><td></td>` })}
+    <p class="small" style="margin-top:10px">${yearNotes.join('<br>')}</p>
+    <p class="small muted" style="margin-top:6px">Взносы вычитаются нарастающим итогом с начала года: сначала фиксированные, потом 1%; налог не бывает меньше нуля. Учтены только доходы с Ozon — если есть другие доходы ИП, сумма будет другой. В прибыли и бюджете налог взят до вычета взносов: взносы вы всё равно платите, и налог вместе со взносами — примерно та же сумма. Сверяйте с бухгалтерией.</p>`}</div>`;
 
   // --- 4. Закупка ---
   const form = `<div class="form-row">
@@ -1984,6 +2006,11 @@ document.addEventListener('change', e => {
     S.settings[key] = v;
     if (S.settings.stockWarn < S.settings.stockCrit) { S.settings.stockWarn = S.settings.stockCrit; toast('Порог «внимание» не может быть меньше критичного — выровнял', ''); }
     save.settings(); return recomputeAll();
+  }
+  if (t.id === 'taxFixed' || t.id === 'taxOnePct') {
+    if (t.id === 'taxOnePct') S.settings.taxContrib.onePct = t.checked;
+    else { const v = parseNum(t.value); if (v != null && v < 0) return toast('Введите число не меньше нуля', 'err'); S.settings.taxContrib.fixed = v || 0; }
+    save.settings(); return renderFinance();
   }
   if (t.dataset.oc !== undefined) {   // другие расходы в месяц
     const i = +t.dataset.oc, row = S.settings.otherCosts[i]; if (!row) return;
