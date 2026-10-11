@@ -195,6 +195,19 @@ test('Telegram: ежедневная сводка и недельный отчё
   assert.match(d, /Реклама «Поиск B1»/, 'кампания с расходом попадает в рекомендации');
   assert.match(d, /просрочено \(01\.01\): Старая задача/);
   assert.match(d, /поставить 300 шт/, 'остатка 30 шт при 2 шт/день (15 дн. < 20) — поставка кратно 300');
+  // Блок «Вчера» — из аналитики по дням (выручка заказов, штуки, показы, выкупы)
+  const { yesterdayLines } = await import('../lib/ozonDigest.js');
+  const keep = db.raw.ozon.days;
+  db.raw.ozon.days = { '2026-10-10': { revenue: 14292, ordered: 45, views: 13885, delivered: 45 }, '2026-10-09': { revenue: 13483, ordered: 39, views: 17576, delivered: 35 } };
+  const y = yesterdayLines(db, '2026-10-11').join('\n');
+  assert.match(y, /Заказано на сумму: 14\s292 ₽ ⬆️ \(\+6%\)/);
+  assert.match(y, /Показы: 13\s885 ⬇️ \(−21%\)/);
+  assert.match(y, /Конверсия из показа в заказ: 0,32%/);
+  assert.match(y, /Выкуплено товаров: 45 шт ⬆️ \(\+29%\)/);
+  assert.match(y, /Продвижение вчера/); assert.match(y, /Расход: 500 ₽/, 'кампания тратит 500 ₽ в день');
+  assert.match(y, /SKU к срочной поставке/);
+  assert.match(y, /CTR: 1,00% .*\(клики 20 из 2\s000 показов\)/);
+  db.raw.ozon.days = keep;
   const w = weeklyDigest(db);
   assert.match(w, /итоги недели/); assert.match(w, /☐ Проверить ДРР/);
 

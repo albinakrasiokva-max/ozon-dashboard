@@ -179,7 +179,7 @@ async function handle(req, res) {
     for (const [k, v] of Object.entries(b.costs || {}).slice(0, 5000)) if (/^\d{1,15}$/.test(k) && n(v) != null && v >= 0) costs[k] = v;
     const goals = {};
     for (const k of ['drr', 'campBad', 'campGood']) if (n(b.goals?.[k]) != null) goals[k] = b.goals[k];
-    getDb().store.ozonConfig = { costs, tax: n(b.tax), goals, minLot: n(b.minLot), supplyDays: n(b.supplyDays), stockWarn: n(b.stockWarn), at: new Date().toISOString() };
+    getDb().store.ozonConfig = { costs, tax: n(b.tax), goals, minLot: n(b.minLot), supplyDays: n(b.supplyDays), stockWarn: n(b.stockWarn), stockCrit: n(b.stockCrit), at: new Date().toISOString() };
     saveDb();
     return send(res, 200, { ok: true });
   }
