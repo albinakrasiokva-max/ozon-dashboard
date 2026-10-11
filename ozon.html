@@ -204,6 +204,7 @@ th.sticky-col{z-index:3;background:var(--raised)}
 <section id="kpi" class="kpi" aria-label="Ключевые показатели"></section>
 <nav class="tabs" role="tablist" aria-label="Разделы">
   <button role="tab" data-tab="overview" aria-selected="true">Обзор</button>
+  <button role="tab" data-tab="today">План и рекомендации</button>
   <button role="tab" data-tab="plan">План-факт</button>
   <button role="tab" data-tab="finance">Финансы и закупки</button>
   <button role="tab" data-tab="units">Юнит-экономика</button>
@@ -214,6 +215,7 @@ th.sticky-col{z-index:3;background:var(--raised)}
 </nav>
 <main>
   <section class="tab" id="tab-overview" role="tabpanel"></section>
+  <section class="tab" id="tab-today" role="tabpanel" hidden></section>
   <section class="tab" id="tab-plan" role="tabpanel" hidden></section>
   <section class="tab" id="tab-finance" role="tabpanel" hidden></section>
   <section class="tab" id="tab-units" role="tabpanel" hidden></section>
@@ -1624,6 +1626,251 @@ function renderFinance() {
 }
 
 /* =====================================================================
+   8б. ВКЛАДКА «ПЛАН И РЕКОМЕНДАЦИИ»
+   Сводка за последние 7 дней против 7 дней до них, итоги прошлой недели,
+   цели плана, юнит-экономика за 7 дней, реклама по кампаниям, неликвид
+   и чек-лист задач (хранится на сервере, общий для всех браузеров).
+   ===================================================================== */
+const PLAN_SECTIONS = [['week', 'На этой неделе'], ['check', 'Проверки'], ['month', 'До конца месяца'], ['strategy', 'Стратегия'], ['monday', 'Каждый понедельник']];
+// Задачи из «Плана магазина» на 10 октября 2026 — первый раз записываются на сервер, дальше правятся в дашборде
+const PLAN_SEED = [
+  ['n7', 'week', '2026-10-15', 'Налокотник: вывести в ноль — цена в акции ≈790 ₽', 'Поднять обычную цену 801 → 900 ₽ (в бустинге ≈793 ₽) или выйти из «Эластичного бустинга» и продавать по 801 ₽. Неделю после этого у налокотника ничего не менять.'],
+  ['n8', 'week', '2026-10-15', 'Щётки и бандаж S: проверить остатки, решить — вывезти или утилизировать', 'Вместе ≈−1 580 ₽ в неделю на размещении. Бандаж S не довозить.'],
+  ['n3', 'week', '2026-10-13', 'Есть ли показы у «Целевой Голень 24,09»', 'Если 0 показов — открыть кампанию: добавлен ли товар, не на модерации ли он.'],
+  ['a2', 'week', '2026-10-15', 'Поставка бандажей (без щёток)', 'Сначала Москва, Ростов, Ярославль, Казань; затем Тюмень и Краснодар.'],
+  ['a3', 'week', '2026-10-15', 'Голеностоп: запросить компенсацию за 2 потерянных товара', 'Заказ от 23 августа, Махачкала: «Ищем товар» больше 6 недель.'],
+  ['a5', 'week', '2026-10-15', 'Голеностоп: проверить липучки и застёжки, предъявить поставщику', '8 жалоб на брак с февраля.'],
+  ['a6', 'week', '2026-10-15', 'Описание и вопросы: на какой обхват подходит «универсальный размер»', 'Главная причина возвратов — размер (66 из 108 комментариев).'],
+  ['a7', 'week', '2026-10-15', '«Не тот товар»: писать в поддержку и проверять этикетки', '9 случаев с января. Перед поставкой сверять штрихкоды.'],
+  ['n4', 'check', '2026-10-17', 'Голень: сравнить «Целевой Голень» и «Голень 29.07»', 'Если у целевой ДРР ниже 7% — «Голень 29.07» на паузу, бюджет в целевую. Если обе выше 12% — снижать ставки или выключать.'],
+  ['n5', 'check', '2026-10-17', 'Налокотник: как повлиял подъём цены', 'Цель — прибыль на штуку не ниже нуля. Если заказы упали больше чем на 30% — снижать рекламу, а не цену.'],
+  ['n6', 'check', '2026-10-17', 'Кисть: держит ли «Целевой Кисть» ДРР при бюджете 4 000 ₽', 'Если ДРР не выше 6% — «Кисть 19.08» в архив. Если выше 8% — вернуть бюджет 3 000 ₽.'],
+  ['b8', 'month', '2026-10-28', 'Аванс УСН за 9 месяцев', 'Сумма к уплате — во вкладке «Финансы и закупки» → «Налоги»; сверить с бухгалтером.'],
+  ['b7', 'month', '2026-10-31', 'Цены: голеностоп держать, налокотник — шагами внутри бустинга', 'Запястье — следующий шаг 801 → 830 ₽, если продажи держатся.'],
+  ['b5', 'month', '2026-10-31', 'Снизить отказы при получении: размер и вид на фото', 'Обхват в см, как измерить, бандаж на тонкой и на крупной руке.'],
+  ['b6', 'month', '2026-10-31', 'Налокотник: тест главного фото — после недели с новой ценой', 'Не раньше 17 октября. Через 7 дней сравнить CTR и конверсию: оставить при +15–20% к CTR.'],
+  ['b3', 'month', '2026-10-31', 'Проверить документы о качестве на все товары', 'С 1 октября действует закон о платформенной экономике.'],
+  ['c1', 'strategy', '', 'Доля локальных продаж выше 70% во всех основных кластерах', 'Чем больше локальных продаж, тем дешевле логистика.'],
+  ['c4', 'strategy', '', 'Снизить зависимость от баллов Ozon', 'Приучать карточки продаваться по ~800 ₽ и выше.'],
+  ['c3', 'strategy', '', 'Не брать заём и не подключать ранний вывод, пока прибыль не вырастет', ''],
+  ['w1', 'monday', '', 'Реклама: ДРР и расход по каждой кампании', 'Таблица кампаний ниже уже посчитана — проверьте рекомендации по ней.'],
+  ['w2', 'monday', '', 'Аналитика → Доступность товаров: дни без остатка и «срочно поставить»', 'Не больше 3 дней без товара в основных кластерах.'],
+  ['w3', 'monday', '', 'Цены → Расходы: расходы Ozon и маржа по каждому товару', 'Если товар ушёл в минус — разобраться на этой же неделе.']
+];
+const PLAN_GOALS = { drr: 8, campBad: 12, campGood: 6 };   // цели плана, %
+S.plan2 = { tasks: null, error: '' };
+
+/** Модель за окно (7 дней, неделя): начисления и реклама окна + текущие остатки, цены и себестоимость. */
+function windowModel(key) {
+  const w = (S.api?.windows || []).find(x => x.key === key);
+  if (!w || !w.datasets.length) return null;
+  const saved = S.datasets;
+  try { S.datasets = [...w.datasets, ...saved.filter(d => !d.period)]; const M = buildModel('all'); M.win = w; return M; }
+  finally { S.datasets = saved; }
+}
+/** Прибыль окна: по товарам с продажами (с налогом), минус расходы товаров без продаж (хранение неликвида). */
+function windowProfit(M) {
+  const known = M.skus.filter(s => s.profitKnown), dead = M.skus.filter(s => !s.hasSales);
+  return { profit: sum(known, s => s.profit) - sum(dead, s => Math.max(0, s.feesTotal + s.ads.total)), partial: M.skus.some(s => s.hasSales && !s.profitKnown) };
+}
+function campStats(c, w) {
+  const r = { spend: 0, sales: 0, orders: 0, views: 0, clicks: 0 };
+  if (w) for (const d of c.daily || []) if (d.date >= w.from && d.date <= w.to) { r.spend += +d.spend || 0; r.sales += +d.ordersSum || 0; r.orders += +d.orders || 0; r.views += +d.views || 0; r.clicks += +d.clicks || 0; }
+  r.drr = r.sales > 0 ? r.spend / r.sales : r.spend > 0 ? Infinity : null;
+  return r;
+}
+function campVerdict(c, G) {
+  const a = c.s.d7, w0 = c.s.w0, w1 = c.s.w1, bad = G.campBad / 100, good = G.campGood / 100;
+  if (c.status !== 'active') return ['gray', 'на паузе'];
+  if (a.views === 0) return ['warn', '0 показов за 7 дней — проверьте, добавлен ли товар и не на модерации ли он'];
+  if (a.spend >= 300 && a.orders === 0) return ['neg', `Расход ${rub(a.spend)} за 7 дней без заказов — снизить ставку или выключить`];
+  if (w0.spend > 0 && w1.spend > 0 && w0.drr > bad && w1.drr > bad) return ['neg', `ДРР выше ${G.campBad}% две недели подряд — снизить ставку или выключить`];
+  if (a.drr != null && a.drr <= good && a.orders >= 3) return ['pos', `ДРР ${pct(a.drr)} — кандидат на больший бюджет`];
+  if (a.drr != null && a.drr > bad) return ['warn', `ДРР ${pct(a.drr)} выше ${G.campBad}% — если и следующая неделя выше, снижайте ставку`];
+  if (a.spend === 0) return ['gray', 'нет расхода за 7 дней'];
+  return ['gray', 'в норме'];
+}
+const drrFmt = v => v == null ? '—' : v === Infinity ? 'без продаж' : pct(v);
+/** Главные расходы товара (кроме комиссии) в % от выручки. */
+function mainCosts(s) {
+  const parts = [['логистика', s.fees.logistics], ['реклама', s.ads.total], ['хранение', s.fees.storage], ['эквайринг', s.fees.acquiring], ['прочее', s.fees.other + s.fees.penalties]]
+    .filter(p => p[1] > 0.5).sort((a, b) => b[1] - a[1]).slice(0, 2);
+  return parts.map(([n, v]) => s.net > 0 ? `${n} ${pct(v / s.net, 0)}` : `${n} ${rub(v)}`).join(', ') || '—';
+}
+const isDone = t => t.section === 'monday' ? !!t.doneAt && t.doneAt >= mondayISO() : !!t.done;
+function mondayISO() { const d = new Date(); d.setDate(d.getDate() - (d.getDay() + 6) % 7); return isoOf(d); }
+
+async function loadPlanTasks() {
+  if (!API_URL) return;
+  try {
+    const r = await fetch('/api/store/plan', { credentials: 'same-origin', cache: 'no-store' });
+    if (!r.ok) throw new Error('сервер ответил ' + r.status);
+    let items = (await r.json()).items || [];
+    if (!items.length) {   // первый запуск — задачи из плана магазина
+      items = PLAN_SEED.map(([id, section, due, title, note], i) => ({ id, section, due, title, note, done: false, order: i }));
+      await Promise.all(items.map(t => planSave(t.id, t)));
+    }
+    S.plan2 = { tasks: items, error: '' };
+  } catch (e) { S.plan2 = { tasks: S.plan2.tasks, error: 'Чек-лист не загрузился: ' + e.message }; }
+  if (S.ui.tab === 'today') renderToday();
+}
+async function planSave(id, body) {
+  const r = await fetch('/api/store/plan/' + encodeURIComponent(id), { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error('не сохранилось (' + r.status + ')');
+}
+async function planDelete(id) { await fetch('/api/store/plan/' + encodeURIComponent(id), { method: 'DELETE', credentials: 'same-origin' }); }
+
+/** Рекомендации на сегодня по правилам плана. [{level, text}] — сначала важные. */
+function planRecs(M7, Mp, camps, G) {
+  const R = [], add = (level, text) => R.push({ level, text });
+  for (const s of M7.skus.filter(s => s.profitKnown && s.ppu < 0 && s.netQty >= 2).sort((a, b) => a.profit - b.profit))
+    add('neg', `<b>${esc(short(s.name, 50))}</b> в минусе: ${rub(s.ppu)} с продажи, ${rub(s.profit)} за 7 дней (${num(s.netQty)} шт по ${rub(s.avgPrice)}). Главные расходы: ${mainCosts(s)}. Поднимите цену или снизьте рекламу.`);
+  for (const s of M7.skus.filter(s => !s.hasSales && s.feesTotal + s.ads.total > 50).sort((a, b) => (b.feesTotal + b.ads.total) - (a.feesTotal + a.ads.total)).slice(0, 5)) {
+    const st = S.model.byId[s.sku]?.stock;
+    add('warn', `<b>${esc(short(s.name, 50))}</b>: ${rub(s.feesTotal + s.ads.total)} расходов за 7 дней без продаж${st ? `, остаток ${num(st.available)} шт` : ''} — вывезти или утилизировать, не довозить.`);
+  }
+  for (const c of camps) { const [lv, txt] = c.verdict; if (lv === 'neg' || lv === 'warn' || lv === 'pos') add(lv === 'pos' ? 'acc' : lv, `Реклама «${esc(c.name)}»: ${txt}.`); }
+  const tot = camps.reduce((a, c) => ({ spend: a.spend + c.s.d7.spend, sales: a.sales + c.s.d7.sales }), { spend: 0, sales: 0 });
+  if (tot.sales > 0 && tot.spend / tot.sales > G.drr / 100) add('warn', `ДРР всей рекламы за 7 дней ${pct(tot.spend / tot.sales)} — выше цели ${G.drr}%.`);
+  for (const s of (S.model.stock || []).filter(s => s.stock.advice.level === 'neg')) add('neg', `<b>${esc(short(s.name, 50))}</b>: остатка на ${s.stock.days} дн. — ${esc(s.stock.advice.text.replace(/^Пора поставлять: /, 'поставить '))}.`);
+  const p7 = windowProfit(M7);
+  if (p7.profit <= 0) add('neg', `За 7 дней магазин ${p7.profit < 0 ? 'в минусе' : 'в нуле'}: ${rub(p7.profit)}${M7.taxSet ? ' после налога' : ''}.`);
+  if (Mp) {
+    const a = M7.totals.net, b = Mp.totals.net;
+    if (b > 0 && Math.abs(a / b - 1) >= 0.2) add(a < b ? 'warn' : 'pos', `Выручка за 7 дней ${a < b ? 'упала' : 'выросла'} на ${pct(Math.abs(a / b - 1), 0)}: ${rub(a)} против ${rub(b)}.`);
+  }
+  const today = todayISO();
+  for (const t of (S.plan2.tasks || []).filter(t => t.due && t.due < today && !isDone(t))) add('warn', `Просрочена задача: «${esc(t.title)}» (срок ${isoToRu(t.due)}).`);
+  const order = { neg: 0, warn: 1, acc: 2, pos: 3 };
+  return R.sort((a, b) => order[a.level] - order[b.level]);
+}
+
+function renderToday() {
+  const M = S.model, el = $('#tab-today');
+  if (!M.have.any) { el.innerHTML = emptyState(); return; }
+  if (!S.api?.windows?.length) { el.innerHTML = stub('Сводка за 7 дней и недели считается по данным Ozon API. Она появится после ближайшей синхронизации (до 30 минут после обновления сервера).'); return; }
+  if (API_URL && !S.plan2.tasks && !S.plan2.error) loadPlanTasks();
+  const G = { ...PLAN_GOALS, ...(S.settings.planGoals || {}) };
+  const M7 = windowModel('d7'), Mp = windowModel('p7'), W0 = windowModel('w0'), W1 = windowModel('w1');
+  if (!M7) { el.innerHTML = stub('За последние 7 дней нет начислений Ozon.'); return; }
+  const win = k => S.api.windows.find(w => w.key === k);
+  const camps = (S.api.campaigns || []).map(c => ({ ...c, s: { d7: campStats(c, win('d7')), p7: campStats(c, win('p7')), w0: campStats(c, win('w0')), w1: campStats(c, win('w1')) } }));
+  camps.forEach(c => c.verdict = campVerdict(c, G));
+  const tot = k => camps.reduce((a, c) => ({ spend: a.spend + c.s[k].spend, sales: a.sales + c.s[k].sales, orders: a.orders + c.s[k].orders }), { spend: 0, sales: 0, orders: 0 });
+  const drrOf = t => t.sales > 0 ? t.spend / t.sales : null;
+  const P7 = windowProfit(M7), Pp = Mp ? windowProfit(Mp) : null;
+  const recs = planRecs(M7, Mp, camps, G);
+  const w7 = win('d7'), wp = win('p7');
+  const delta = (a, b, fmt, inv = false) => b == null || !ok(a) || !ok(b) ? '' : (() => { const d = a - b, cls = (inv ? d < 0 : d > 0) ? 'pos' : d === 0 ? 'muted' : 'neg'; return `<div class="small ${cls}">${d >= 0 ? '+' : '−'}${fmt(Math.abs(d))} к прошлым 7 дням</div>`; })();
+  const tile = (lbl, v, sub) => `<div><div class="small muted">${lbl}</div><div style="font-size:24px;font-weight:600">${v}</div>${sub || ''}</div>`;
+  const drr7 = drrOf(tot('d7')), drrP = drrOf(tot('p7'));
+
+  // --- 1. Сводка ---
+  const summary = `<div class="panel"><div class="panel-head"><h2>Сводка за 7 дней</h2><p>${isoToRu(w7.from)} – ${isoToRu(w7.to)}, сравнение с ${isoToRu(wp.from)} – ${isoToRu(wp.to)}. Данные Ozon API обновляются каждые 30 минут.</p></div>
+    <div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));margin-bottom:16px">
+      ${tile('Выручка', rub(M7.totals.net), delta(M7.totals.net, Mp?.totals.net, rub))}
+      ${tile('Продано, шт', num(M7.totals.netQty), delta(M7.totals.netQty, Mp?.totals.netQty, num))}
+      ${tile(`Прибыль${M7.taxSet ? ' после налога' : ''}`, `<span class="${P7.profit < 0 ? 'neg' : ''}">${rub(P7.profit)}</span>`, delta(P7.profit, Pp?.profit, rub) + (P7.partial ? '<div class="small warn">есть товары без себестоимости</div>' : ''))}
+      ${tile(`ДРР рекламы (цель ≤${G.drr}%)`, camps.length ? `<span class="${drr7 > G.drr / 100 ? 'warn' : 'pos'}">${drrFmt(drr7)}</span>` : '—', camps.length ? delta(drr7 * 100, drrP == null ? null : drrP * 100, v => num(v, 1) + ' п.п.', true) : '<div class="small muted">нужны ключи Performance</div>')}
+    </div>
+    <h3>Что сделать сегодня</h3>
+    ${recs.length ? `<ol class="insights" style="margin-top:8px">${recs.map(r => `<li class="${r.level}"><span>${r.text}</span></li>`).join('')}</ol>` : stub('Всё по плану: товаров в минусе, неликвида и проблемных кампаний нет.')}</div>`;
+
+  // --- 2. Цели плана ---
+  const dead = M7.skus.filter(s => !s.hasSales && s.feesTotal + s.ads.total > 0);
+  const deadLoss = sum(dead, s => s.feesTotal + s.ads.total);
+  const minus = M7.skus.filter(s => s.profitKnown && s.ppu < 0 && s.netQty >= 2);
+  const campBad2 = camps.filter(c => c.verdict[1].startsWith('ДРР выше'));
+  const crit = (S.model.stock || []).filter(s => s.stock.status === 'crit');
+  const goalRow = (name, now, goal, good) => `<tr><td>${name}</td><td class="num ${good == null ? '' : good ? 'pos' : 'neg'}">${now}${good ? ' ✓' : ''}</td><td class="num">${goal}</td></tr>`;
+  const goals = `<div class="panel"><div class="panel-head"><h2>Цели плана</h2><p>Считаются за последние 7 дней. Пороги можно поменять.</p></div>
+    <div class="tbl"><table><thead><tr><th>Показатель</th><th class="num">Сейчас</th><th class="num">Цель</th></tr></thead><tbody>
+      ${goalRow('ДРР всей рекламы (расход / продажи с рекламы)', camps.length ? drrFmt(drr7) : 'нет данных', `≤${G.drr}%`, camps.length && drr7 != null ? drr7 <= G.drr / 100 : null)}
+      ${goalRow(`Кампании с ДРР выше ${G.campBad}% две недели подряд`, camps.length ? num(campBad2.length) : 'нет данных', '0', camps.length ? !campBad2.length : null)}
+      ${goalRow('Товары в минусе', num(minus.length), '0', !minus.length)}
+      ${goalRow('Потери на неликвиде (расходы без продаж)', rub(deadLoss) + ' за 7 дней', '0', deadLoss < 50)}
+      ${goalRow('Товары с остатком меньше 7 дней', num(crit.length), '0', !crit.length)}
+      ${goalRow(`Чистая прибыль за 7 дней${M7.taxSet ? ' после налога' : ''}`, rub(P7.profit), 'в плюсе', P7.profit > 0)}
+    </tbody></table></div>
+    <div class="form-row" style="margin-top:12px">
+      <label>Цель ДРР всей рекламы, %<input type="number" min="0" step="0.5" data-goal="drr" value="${G.drr}"></label>
+      <label>Плохой ДРР кампании, %<input type="number" min="0" step="0.5" data-goal="campBad" value="${G.campBad}"></label>
+      <label>Хороший ДРР кампании, %<input type="number" min="0" step="0.5" data-goal="campGood" value="${G.campGood}"></label></div></div>`;
+
+  // --- 3. Юнит-экономика за 7 дней ---
+  const pById = Mp ? Mp.byId : {};
+  const unitList = M7.skus.filter(s => s.hasSales);
+  const units = `<div class="panel"><div class="panel-head"><h2>Юнит-экономика за 7 дней</h2><p>Прибыль на штуку — после удержаний Ozon, рекламы, себестоимости${M7.taxSet ? ' и налога' : ''}. «Было» — за 7 дней до этого.</p></div>
+    ${table('planUnits', [
+      { key: 'name', label: 'Товар', sticky: 1, val: s => s.name, cell: nameCell },
+      { key: 'price', label: 'Цена', num: 1, val: s => s.avgPrice, fmt: v => rub(v) },
+      { key: 'qty', label: 'Продано', num: 1, val: s => s.netQty, fmt: v => num(v) },
+      { key: 'ppu', label: 'На 1 шт', num: 1, val: s => s.ppu, cell: s => `<td class="num">${s.profitKnown ? signed(s.ppu) : costLink(s.sku)}</td>` },
+      { key: 'was', label: 'Было на 1 шт', num: 1, val: s => pById[s.sku]?.ppu ?? null, fmt: v => ok(v) ? signed(v) : '—' },
+      { key: 'profit', label: 'За 7 дней', num: 1, val: s => s.profit, fmt: v => ok(v) ? `<b>${signed(v)}</b>` : '—' },
+      { key: 'drr', label: 'Реклама', num: 1, val: s => s.drr, fmt: v => pct(v) },
+      { key: 'main', label: 'Главные расходы', val: s => mainCosts(s), cell: s => `<td class="small">${mainCosts(s)}</td>` }],
+      unitList, { sort: { key: 'profit', dir: -1 } })}
+    ${dead.length ? `<h3 style="margin-top:16px">Неликвид: расходы без продаж за 7 дней</h3>${table('planDead', [
+      { key: 'name', label: 'Товар', sticky: 1, val: s => s.name, cell: nameCell },
+      { key: 'loss', label: 'Расходы', num: 1, val: s => s.feesTotal + s.ads.total, fmt: v => `<span class="neg">${rub(-v)}</span>` },
+      { key: 'stock', label: 'Остаток, шт', num: 1, val: s => S.model.byId[s.sku]?.stock?.available ?? null, fmt: v => ok(v) ? num(v) : '—' },
+      { key: 'main', label: 'Из чего', val: s => mainCosts(s), cell: s => `<td class="small">${mainCosts(s)}</td>` }],
+      dead, { sort: { key: 'loss', dir: -1 } })}<p class="small muted" style="margin-top:8px">Итого ${rub(deadLoss)} за 7 дней (≈${rub(deadLoss / 7 * 30)} в месяц). Если по артикулу мало штук — заявка на вывоз или утилизацию дешевле, чем хранение.</p>` : ''}</div>`;
+
+  // --- 4. Реклама по кампаниям ---
+  const W = { w0: win('w0'), w1: win('w1') };
+  const ads = `<div class="panel"><div class="panel-head"><h2>Реклама по кампаниям</h2><p>Ozon Performance. ДРР = расход / продажи с рекламы. Правила плана: две недели выше ${G.campBad}% — снижать ставку или выключать; до ${G.campGood}% — кандидат на больший бюджет.</p></div>
+    ${!S.api.perf?.on ? stub('Добавьте ключи Ozon Performance — появятся расход, продажи и ДРР по каждой кампании.') : !camps.length ? stub(S.api.perf.error ? esc(S.api.perf.error) : 'Кампаний с расходом за 30 дней нет или данные ещё загружаются.') : table('planCamps', [
+      { key: 'name', label: 'Кампания', val: c => c.name, cell: c => `<td><b>${esc(c.name)}</b>${c.status === 'active' ? '' : ' <span class="pill gray">пауза</span>'}</td>` },
+      { key: 'spend', label: 'Расход, 7 дн.', num: 1, val: c => c.s.d7.spend, fmt: v => rub(v) },
+      { key: 'sales', label: 'Продажи', num: 1, val: c => c.s.d7.sales, fmt: v => rub(v) },
+      { key: 'orders', label: 'Заказы', num: 1, val: c => c.s.d7.orders, fmt: v => num(v) },
+      { key: 'ctr', label: 'CTR', num: 1, val: c => c.s.d7.views ? c.s.d7.clicks / c.s.d7.views : null, fmt: v => pct(v) },
+      { key: 'drr', label: 'ДРР, 7 дн.', num: 1, val: c => c.s.d7.drr === Infinity ? 1e9 : c.s.d7.drr, fmt: (v, c) => `<b class="${c.s.d7.drr > G.campBad / 100 ? 'neg' : c.s.d7.drr <= G.campGood / 100 ? 'pos' : ''}">${drrFmt(c.s.d7.drr)}</b>` },
+      { key: 'w0', label: `ДРР ${isoToRu(W.w0.from).slice(0, 5)}–${isoToRu(W.w0.to).slice(0, 5)}`, num: 1, val: c => c.s.w0.drr === Infinity ? 1e9 : c.s.w0.drr, fmt: (v, c) => drrFmt(c.s.w0.drr) },
+      { key: 'w1', label: `ДРР ${isoToRu(W.w1.from).slice(0, 5)}–${isoToRu(W.w1.to).slice(0, 5)}`, num: 1, val: c => c.s.w1.drr === Infinity ? 1e9 : c.s.w1.drr, fmt: (v, c) => drrFmt(c.s.w1.drr) },
+      { key: 'v', label: 'Рекомендация', val: c => ({ neg: 0, warn: 1, pos: 2, gray: 3 })[c.verdict[0]], cell: c => `<td style="min-width:220px"><span class="pill ${c.verdict[0]}" style="white-space:normal">${esc(c.verdict[1])}</span></td>` }],
+      camps.filter(c => c.s.d7.spend > 0 || c.s.w0.spend > 0 || c.status === 'active'), { sort: { key: 'spend', dir: -1 } })}</div>`;
+
+  // --- 5. Итоги прошлой недели ---
+  let weekly = '';
+  if (W0) {
+    const p0 = windowProfit(W0), p1 = W1 ? windowProfit(W1) : null, t0 = tot('w0'), t1 = tot('w1');
+    const row = (name, a, b, fmt, inv = false) => { const d = ok(a) && ok(b) ? a - b : null; return `<tr><td>${name}</td><td class="num"><b>${fmt(a)}</b></td><td class="num muted">${ok(b) ? fmt(b) : '—'}</td><td class="num ${d == null || d === 0 ? '' : (inv ? d < 0 : d > 0) ? 'pos' : 'neg'}">${d == null ? '' : (d >= 0 ? '+' : '−') + fmt(Math.abs(d))}</td></tr>`; };
+    const changes = W1 ? W0.skus.filter(s => s.profitKnown && W1.byId[s.sku]?.profitKnown).map(s => ({ s, d: s.profit - W1.byId[s.sku].profit })).sort((a, b) => Math.abs(b.d) - Math.abs(a.d)).slice(0, 3) : [];
+    weekly = `<div class="panel"><div class="panel-head"><h2>Итоги недели ${isoToRu(W.w0.from)} – ${isoToRu(W.w0.to)}</h2><p>Еженедельный отчёт: прошлая неделя (пн–вс) против позапрошлой.</p></div>
+      <div class="tbl"><table><thead><tr><th>Показатель</th><th class="num">Неделя</th><th class="num">Неделей раньше</th><th class="num">Изменение</th></tr></thead><tbody>
+        ${row('Выручка', W0.totals.net, W1?.totals.net, rub)}
+        ${row('Продано, шт', W0.totals.netQty, W1?.totals.netQty, num)}
+        ${row(`Прибыль${W0.taxSet ? ' после налога' : ''}`, p0.profit, p1?.profit, rub)}
+        ${camps.length ? row('Расход на рекламу', t0.spend, t1.spend, rub, true) : ''}
+        ${camps.length ? row('ДРР рекламы', drrOf(t0) == null ? null : drrOf(t0) * 100, drrOf(t1) == null ? null : drrOf(t1) * 100, v => num(v, 1) + '%', true) : ''}
+      </tbody></table></div>
+      ${changes.length ? `<p class="small" style="margin-top:10px">Сильнее всего изменилась прибыль: ${changes.map(x => `${esc(short(x.s.name, 40))} ${x.d >= 0 ? '+' : '−'}${rub(Math.abs(x.d))}`).join('; ')}.</p>` : ''}</div>`;
+  }
+
+  // --- 6. Чек-лист ---
+  const T = S.plan2.tasks, today = todayISO();
+  const taskRow = t => { const done = isDone(t), late = t.due && t.due < today && !done;
+    return `<li style="display:grid;grid-template-columns:22px 1fr auto;gap:10px;padding:8px 4px;border-bottom:1px solid var(--line-soft)">
+      <input type="checkbox" data-task="${esc(t.id)}" ${done ? 'checked' : ''} aria-label="Выполнено">
+      <span style="${done ? 'text-decoration:line-through;opacity:.6' : ''}"><b>${esc(t.title)}</b>${t.due ? ` <span class="pill ${late ? 'neg' : 'gray'}">${late ? 'просрочено, ' : 'до '}${isoToRu(t.due).slice(0, 5)}</span>` : ''}${t.note ? `<br><span class="small muted">${esc(t.note)}</span>` : ''}</span>
+      <button class="btn small" data-task-del="${esc(t.id)}" aria-label="Удалить задачу">×</button></li>`; };
+  const checklist = `<div class="panel"><div class="panel-head"><h2>Чек-лист плана</h2><p>Отметки хранятся на сервере и видны в любом браузере. «Каждый понедельник» сбрасывается сам в начале недели.</p></div>
+    ${!API_URL ? stub('Чек-лист работает, когда дашборд открыт с сервера.') : S.plan2.error ? stub(esc(S.plan2.error)) : !T ? stub('Загружаю…') :
+      PLAN_SECTIONS.map(([k, name]) => { const list = T.filter(t => (t.section || 'week') === k).sort((a, b) => (a.done - b.done) || (a.due || '9').localeCompare(b.due || '9') || (a.order ?? 0) - (b.order ?? 0));
+        return list.length ? `<h3 style="margin-top:14px">${name} <span class="small muted">${list.filter(isDone).length} из ${list.length}</span></h3><ul style="list-style:none;margin:6px 0 0;padding:0">${list.map(taskRow).join('')}</ul>` : ''; }).join('')}
+    ${API_URL && T ? `<div class="form-row" style="margin-top:14px">
+      <label style="flex:1;min-width:220px">Новая задача<input type="text" id="taskTitle" placeholder="Например: проверить ДРР «Целевой Голень»"></label>
+      <label>Срок<input type="date" id="taskDue"></label>
+      <label>Раздел<select id="taskSec">${PLAN_SECTIONS.map(([k, n]) => `<option value="${k}">${n}</option>`).join('')}</select></label>
+      <button class="btn primary" id="taskAdd">Добавить</button></div>` : ''}</div>`;
+
+  el.innerHTML = `<div class="stack">${summary}${goals}${units}${ads}${weekly}${checklist}</div>`;
+}
+
+/* =====================================================================
    9. ВКЛАДКА «ЮНИТ-ЭКОНОМИКА»
    Цепочка на одну проданную единицу: цена → минус статьи → прибыль/шт.
    ===================================================================== */
@@ -1927,7 +2174,7 @@ function renderData() {
    Любое изменение данных (загрузка, себестоимость, настройки) вызывает
    recomputeAll(): модель строится заново, перерисовываются KPI и активная вкладка.
    ===================================================================== */
-const RENDER = { overview: renderOverview, plan: renderPlan, finance: renderFinance, units: renderUnits, products: renderProducts, ads: renderAds, stock: renderStock, data: renderData };
+const RENDER = { overview: renderOverview, today: renderToday, plan: renderPlan, finance: renderFinance, units: renderUnits, products: renderProducts, ads: renderAds, stock: renderStock, data: renderData };
 function recomputeAll() {
   try { S.model = buildModel(S.period); }
   catch (e) { console.error(e); toast('Ошибка расчёта: ' + e.message, 'err'); return; }
@@ -1980,6 +2227,17 @@ document.addEventListener('click', e => {
   const gc = t.closest('[data-goto-cost]');
   if (gc) { e.stopPropagation(); goTab('units'); const inp = document.getElementById('cost-' + gc.dataset.gotoCost); if (inp) { inp.scrollIntoView({ block: 'center' }); inp.focus(); } return; }
   const rc = t.closest('[data-reset-cost]'); if (rc) { delete S.costs[rc.dataset.resetCost]; save.costs(); return recomputeAll(); }
+  if (t.closest('#taskAdd')) {
+    const title = $('#taskTitle').value.trim(); if (!title) return toast('Впишите задачу', 'err');
+    const task = { id: 'u' + uid(), title, due: $('#taskDue').value || '', section: $('#taskSec').value, note: '', done: false, order: Date.now() };
+    (S.plan2.tasks ||= []).push(task); renderToday();
+    planSave(task.id, task).catch(e => { toast('Чек-лист: ' + e.message, 'err'); loadPlanTasks(); });
+    return;
+  }
+  const tdel = t.closest('[data-task-del]');
+  if (tdel) { const id = tdel.dataset.taskDel, task = (S.plan2.tasks || []).find(x => x.id === id);
+    askModal('Удалить задачу?', esc(task?.title || ''), [['yes', 'Удалить', 'danger'], ['no', 'Отмена', '']]).then(v => { if (v !== 'yes') return; S.plan2.tasks = S.plan2.tasks.filter(x => x.id !== id); renderToday(); planDelete(id); });
+    return; }
   if (t.closest('#ocAdd')) { S.settings.otherCosts.push({ name: '', v: null }); save.settings(); renderFinance(); const inp = $$('[data-oc][data-f="name"]').pop(); if (inp) inp.focus(); return; }
   const ocd = t.closest('[data-oc-del]'); if (ocd) { S.settings.otherCosts.splice(+ocd.dataset.ocDel, 1); save.settings(); return renderFinance(); }
   const pm = t.closest('[data-plan-month]'); if (pm) { S.plan.month = pm.dataset.planMonth; save.plan(); return renderPlan(); }
@@ -1991,7 +2249,7 @@ document.addEventListener('click', e => {
   if (ex) { const k = +ex.dataset.expand; S.ui.expanded.has(k) ? S.ui.expanded.delete(k) : S.ui.expanded.add(k); renderProductsTable(); }
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && e.target.matches('input[data-cost],input[data-cat],input[data-rate],input[data-oc]')) e.target.blur();
+  if (e.key === 'Enter' && e.target.matches('input[data-cost],input[data-cat],input[data-rate],input[data-oc],input[data-goal]')) e.target.blur();
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-expand]')) { e.preventDefault(); e.target.click(); }
   if (e.key === 'Enter' && e.target.matches('label.btn')) e.target.click();
 });
@@ -2013,6 +2271,17 @@ document.addEventListener('change', e => {
     if (t.id === 'taxOnePct') S.settings.taxContrib.onePct = t.checked;
     else { const v = parseNum(t.value); if (v != null && v < 0) return toast('Введите число не меньше нуля', 'err'); S.settings.taxContrib.fixed = v || 0; }
     save.settings(); return renderFinance();
+  }
+  if (t.dataset.goal) {   // пороги плана
+    const v = parseNum(t.value); if (v == null || v < 0) return toast('Введите число', 'err');
+    S.settings.planGoals = { ...(S.settings.planGoals || {}), [t.dataset.goal]: v }; save.settings(); return renderToday();
+  }
+  if (t.dataset.task) {   // отметка задачи чек-листа
+    const task = (S.plan2.tasks || []).find(x => x.id === t.dataset.task); if (!task) return;
+    const patch = task.section === 'monday' ? { doneAt: t.checked ? todayISO() : '' } : { done: t.checked };
+    Object.assign(task, patch); renderToday();
+    planSave(task.id, patch).catch(e => { toast('Чек-лист: ' + e.message, 'err'); loadPlanTasks(); });
+    return;
   }
   if (t.dataset.oc !== undefined) {   // другие расходы в месяц
     const i = +t.dataset.oc, row = S.settings.otherCosts[i]; if (!row) return;
@@ -2106,7 +2375,7 @@ async function loadFromApi({ quiet = true } = {}) {
     else taken.push(ds);
   }
   S.datasets = [...manual, ...taken];
-  S.api = { seller: j.seller, perf: j.perf, lastSync: j.lastSync, syncing: j.syncing, skipped };
+  S.api = { seller: j.seller, perf: j.perf, lastSync: j.lastSync, syncing: j.syncing, skipped, windows: j.windows || [], campaigns: j.campaigns || [] };
   save.datasets();
   const keys = periodKeys();
   if (!hadApi && taken.length && S.period === 'all' && keys.length) S.period = keys[keys.length - 1];
