@@ -185,6 +185,36 @@ test('План: окна 7 дней и недель, реклама по окн�
   assert.equal(ads.data.campaigns[0].sku, 555);
 });
 
+test('Telegram: ежедневная сводка и недельный отчёт по окнам плана', async () => {
+  const { dailyDigest, weeklyDigest, dueDigests, windowCalc } = await import('../lib/ozonDigest.js');
+  const db = getDb();
+  db.store.ozonConfig = { costs: { 555: 400 }, tax: 6, goals: {}, minLot: 300, supplyDays: 30, stockWarn: 20 };
+  db.store.plan = [{ id: 'x', section: 'week', title: 'Старая задача', due: '2020-01-01', done: false }, { id: 'm', section: 'monday', title: 'Проверить ДРР', doneAt: '' }];
+  const d = dailyDigest(db);
+  assert.match(d, /сводка за 7 дней/);
+  assert.match(d, /Реклама «Поиск B1»/, 'кампания с расходом попадает в рекомендации');
+  assert.match(d, /просрочено \(01\.01\): Старая задача/);
+  assert.match(d, /поставить 300 шт/, 'остатка 30 шт при 2 шт/день (15 дн. < 20) — поставка кратно 300');
+  const w = weeklyDigest(db);
+  assert.match(w, /итоги недели/); assert.match(w, /☐ Проверить ДРР/);
+
+  // Расчёт окна: продажа 1000 ₽, баллы 200 уменьшают комиссию 450 → 250, логистика 100, реклама 70, налог 6%, себестоимость 400
+  const win = { accruals: { data: { items: { 7: { sku: 7, name: 'Бандаж', article: '7', comp: 0, fees: { commission: 450, acquiring: 0, logistics: 100, storage: 0, penalties: 0, other: 0, ads: 0 }, sold: { soldQty: 1, retQty: 0, soldAmt: 1000, soldLoyal: 200, retAmt: 0, retLoyal: 0 } } }, unassigned: {}, income: {}, adsSub: 0 } } };
+  const c = windowCalc(win, { data: { campaigns: [{ sku: 7, spend: 70 }] } }, { costs: { 7: 400 }, tax: 6 });
+  assert.equal(c.rows[0].profit, 1000 - 250 - 100 - 70 - 60 - 400);
+
+  // Время отправки: не раньше 9:00 МСК, один раз в день, только когда данные по вчерашний день
+  db.state.digestDay = '';
+  const d7 = db.raw.ozon.windows.find(x => x.key === 'd7');
+  const at = iso => new Date(iso);
+  d7.to = '2026-10-11';
+  assert.equal(dueDigests(db, at('2026-10-12T05:00:00Z')).length, 0, '8:00 МСК — рано');
+  assert.equal(dueDigests(db, at('2026-10-12T06:30:00Z')).length, 2, 'понедельник 9:30 — сводка и недельный отчёт');
+  assert.equal(dueDigests(db, at('2026-10-12T07:00:00Z')).length, 0, 'второй раз за день не шлём');
+  db.state.digestDay = ''; d7.to = '2026-10-10';
+  assert.equal(dueDigests(db, at('2026-10-12T07:00:00Z')).length, 0, 'данные не по вчерашний день — ждём синхронизацию');
+});
+
 test('старый метод остатков отключён (404) — остатки берутся из /v4/product/info/stocks', async () => {
   installMock({ 'api-seller.ozon.ru/v2/analytics/stock_on_warehouses': 404 });
   await syncAll();
