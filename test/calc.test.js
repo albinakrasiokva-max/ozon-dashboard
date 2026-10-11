@@ -206,6 +206,7 @@ test('Telegram: ежедневная сводка и недельный отчё
   assert.match(y, /Выкуплено товаров: 45 шт ⬆️ \(\+29%\)/);
   assert.match(y, /Продвижение вчера/); assert.match(y, /Расход: 500 ₽/, 'кампания тратит 500 ₽ в день');
   assert.match(y, /SKU к срочной поставке/);
+  assert.match(y, /CTR: 1,00% .*\(клики 20 из 2\s000 показов\)/);
   db.raw.ozon.days = keep;
   const w = weeklyDigest(db);
   assert.match(w, /итоги недели/); assert.match(w, /☐ Проверить ДРР/);
