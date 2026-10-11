@@ -2194,7 +2194,7 @@ function pushConfig() {
     const costs = {};
     for (const s of S.model?.skus || []) if (s.cost?.v != null) costs[s.sku] = s.cost.v;
     const set = S.settings;
-    const body = JSON.stringify({ costs, tax: set.rates.tax ?? null, goals: set.planGoals || {}, minLot: set.minLot, supplyDays: set.supplyDays, stockWarn: set.stockWarn });
+    const body = JSON.stringify({ costs, tax: set.rates.tax ?? null, goals: set.planGoals || {}, minLot: set.minLot, supplyDays: set.supplyDays, stockWarn: set.stockWarn, stockCrit: set.stockCrit });
     if (body === cfgSent) return;
     fetch('/api/ozon/config', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body })
       .then(r => { if (r.ok) cfgSent = body; }).catch(() => {});
