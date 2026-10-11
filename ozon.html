@@ -196,7 +196,7 @@ th.sticky-col{z-index:3;background:var(--raised)}
     <label class="period">Период <select id="periodSel" aria-label="Период"></select></label>
     <button id="apiBtn" class="btn" type="button" hidden title="Запросить свежие данные из Ozon API">Обновить из Ozon</button>
     <button id="snapBtn" class="btn" type="button" title="Сохранить ключевые показатели текущего периода для графика тренда">Сохранить срез</button>
-    <label class="btn primary" for="fileInput" tabindex="0">Загрузить отчёты</label>
+    <label class="btn primary" for="fileInput" tabindex="0" id="uploadBtn">Загрузить отчёты</label>
     <input type="file" id="fileInput" multiple accept=".xlsx,.xls,.csv" hidden>
   </div>
 </header>
@@ -1267,6 +1267,7 @@ function renderHeader() {
     : `${M.range ? 'Данные с ' + isoToRu(M.range.from) + ' по ' + isoToRu(M.range.to) : 'Нет отчётов о продажах за период'}${M.stockDate ? ', остатки на ' + isoToRu(M.stockDate) : ''}`;
   if (apiOn()) $('#dataStamp').textContent += ` · Ozon API: ${S.api.syncing ? 'обновляется…' : S.api.lastSync ? 'обновлено ' + timeRu(S.api.lastSync) : 'ждём первую синхронизацию'}`;
   $('#apiBtn').hidden = !apiOn();
+  $('#uploadBtn').style.display = apiOn() ? 'none' : '';   // данные идут из Ozon API — загружать файлы не нужно
 }
 
 /* ---------- KPI-строка ---------- */
@@ -1305,8 +1306,7 @@ function emptyState() {
   if (apiOn()) return `<div class="empty">
     <h2>Данные из Ozon загружаются</h2>
     <p class="muted">Магазин подключён по API. Первая синхронизация занимает несколько минут — страница обновится сама. ${S.api.seller.error ? `<br><b class="neg">${esc(S.api.seller.error)}</b>` : ''}</p>
-    <p class="muted">Можно не ждать и загрузить выгрузки вручную.</p>
-    <label class="btn primary" for="fileInput">Выбрать файлы</label></div>`;
+    </div>`;
   return `<div class="empty">
     <h2>Загрузите выгрузки из личного кабинета Ozon</h2>
     <p class="muted">Файлы разбираются прямо в браузере и никуда не отправляются. Тип отчёта определяется по колонкам, имя файла не важно. Можно перетащить файлы на страницу.</p>
