@@ -12,7 +12,7 @@ import { syncAll, isSyncing, enabledKeys, sourceStatus, startScheduler, crmSourc
 import { ingest, recognize, filePath } from './lib/docs.js';
 import { aiEnabled, chat } from './lib/ai.js';
 import { snapshotForAI } from './lib/snapshot.js';
-import { startTelegram } from './lib/telegram.js';
+import { startTelegram, maybeSendDigests } from './lib/telegram.js';
 import { runDecisions, maybeDailyRun, refreshStatuses, act, isRunning } from './lib/decisions.js';
 import { authEnabled, publicAccess, checkStartup, isAuthed, checkPassword, tooManyFails, clientIp, makeSession, sessionCookie, clearCookie, sameOrigin, loginPage } from './lib/auth.js';
 import { stopTelegram } from './lib/telegram.js';
@@ -77,7 +77,7 @@ function ozonReports() {
   }) : [];
   const campaigns = on.includes('ozonPerf') ? (db.raw.ozonPerf?.campaigns || []).map(c => ({ id: c.id, name: c.name, status: c.status, daily: c.daily })) : [];
   return {
-    windows, campaigns,
+    windows, campaigns, config: db.store.ozonConfig || null,
     seller: { on: seller.on, at: seller.at, error: seller.error },
     perf: { on: perf.on, at: perf.at, error: perf.error },
     // Реклама из начислений нужна, только если за этот месяц нет данных Ozon Performance
@@ -170,6 +170,19 @@ async function handle(req, res) {
     return fs.createReadStream(path.join(ROOT, 'ozon.html')).pipe(res);
   }
   if (method === 'GET' && p === '/api/ozon/reports') return send(res, 200, ozonReports());
+  // Себестоимость, налог и пороги «Аналитики Ozon» — страница присылает их, чтобы сервер считал сводку для Telegram
+  if (method === 'PUT' && p === '/api/ozon/config') {
+    const b = await readBody(req);
+    if (typeof b !== 'object' || Array.isArray(b) || b === null) throw fail(400, 'Ожидается объект');
+    const n = v => typeof v === 'number' && isFinite(v) ? v : null;
+    const costs = {};
+    for (const [k, v] of Object.entries(b.costs || {}).slice(0, 5000)) if (/^\d{1,15}$/.test(k) && n(v) != null && v >= 0) costs[k] = v;
+    const goals = {};
+    for (const k of ['drr', 'campBad', 'campGood']) if (n(b.goals?.[k]) != null) goals[k] = b.goals[k];
+    getDb().store.ozonConfig = { costs, tax: n(b.tax), goals, minLot: n(b.minLot), supplyDays: n(b.supplyDays), stockWarn: n(b.stockWarn), at: new Date().toISOString() };
+    saveDb();
+    return send(res, 200, { ok: true });
+  }
   if (method === 'GET' && p === '/api/dashboard') return send(res, 200, dashboard());
   if (method === 'GET' && p === '/api/status') {
     return send(res, 200, { sources: sourceStatus(), syncing: isSyncing(), lastSync: getDb().lastSync, ai: aiEnabled(), auth: authEnabled() });
@@ -318,5 +331,6 @@ server.listen(PORT, HOST, () => {
     syncAll().catch(() => {}).finally(daily);
   } else daily();
   setInterval(daily, 60000).unref();
+  setInterval(() => maybeSendDigests().catch(e => console.error('[telegram]', e.message)), 60000).unref();
   startTelegram();
 });
