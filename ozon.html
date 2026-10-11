@@ -1679,9 +1679,12 @@ function campStats(c, w) {
   r.drr = r.sales > 0 ? r.spend / r.sales : r.spend > 0 ? Infinity : null;
   return r;
 }
+// «Оплата за заказ»: продаж в статистике Performance нет, ДРР по ней не считается
+const orderPay = name => /оплата за заказ/i.test(name || '');
 function campVerdict(c, G) {
   const a = c.s.d7, w0 = c.s.w0, w1 = c.s.w1, bad = G.campBad / 100, good = G.campGood / 100;
   if (c.status !== 'active') return ['gray', 'на паузе'];
+  if (orderPay(c.name)) return ['gray', `оплата за заказ: ${rub(a.spend)} за 7 дней, ДРР по ней не считается`];
   if (a.views === 0) return ['warn', '0 показов за 7 дней — проверьте, добавлен ли товар и не на модерации ли он'];
   if (a.spend >= 300 && a.orders === 0) return ['neg', `Расход ${rub(a.spend)} за 7 дней без заказов — снизить ставку или выключить`];
   if (w0.spend > 0 && w1.spend > 0 && w0.drr > bad && w1.drr > bad) return ['neg', `ДРР выше ${G.campBad}% две недели подряд — снизить ставку или выключить`];
@@ -1730,7 +1733,7 @@ function planRecs(M7, Mp, camps, G) {
     add('warn', `<b>${esc(short(s.name, 50))}</b>: ${rub(s.feesTotal + s.ads.total)} расходов за 7 дней без продаж${st ? `, остаток ${num(st.available)} шт` : ''} — вывезти или утилизировать, не довозить.`);
   }
   for (const c of camps) { const [lv, txt] = c.verdict; if (lv === 'neg' || lv === 'warn' || lv === 'pos') add(lv === 'pos' ? 'acc' : lv, `Реклама «${esc(c.name)}»: ${txt}.`); }
-  const tot = camps.reduce((a, c) => ({ spend: a.spend + c.s.d7.spend, sales: a.sales + c.s.d7.sales }), { spend: 0, sales: 0 });
+  const tot = camps.filter(c => !orderPay(c.name)).reduce((a, c) => ({ spend: a.spend + c.s.d7.spend, sales: a.sales + c.s.d7.sales }), { spend: 0, sales: 0 });
   if (tot.sales > 0 && tot.spend / tot.sales > G.drr / 100) add('warn', `ДРР всей рекламы за 7 дней ${pct(tot.spend / tot.sales)} — выше цели ${G.drr}%.`);
   for (const s of (S.model.stock || []).filter(s => s.stock.advice.level === 'neg')) add('neg', `<b>${esc(short(s.name, 50))}</b>: остатка на ${s.stock.days} дн. — ${esc(s.stock.advice.text.replace(/^Пора поставлять: /, 'поставить '))}.`);
   const p7 = windowProfit(M7);
@@ -1754,9 +1757,10 @@ function renderToday() {
   const M7 = windowModel('d7'), Mp = windowModel('p7'), W0 = windowModel('w0'), W1 = windowModel('w1');
   if (!M7) { el.innerHTML = stub('За последние 7 дней нет начислений Ozon.'); return; }
   const win = k => S.api.windows.find(w => w.key === k);
-  const camps = (S.api.campaigns || []).map(c => ({ ...c, s: { d7: campStats(c, win('d7')), p7: campStats(c, win('p7')), w0: campStats(c, win('w0')), w1: campStats(c, win('w1')) } }));
+  // служебные кампании без названия и без расхода за 30 дней не показываем
+  const camps = (S.api.campaigns || []).filter(c => !(/^Кампания \d+$/.test(c.name || '') && !(c.daily || []).some(d => +d.spend > 0))).map(c => ({ ...c, s: { d7: campStats(c, win('d7')), p7: campStats(c, win('p7')), w0: campStats(c, win('w0')), w1: campStats(c, win('w1')) } }));
   camps.forEach(c => c.verdict = campVerdict(c, G));
-  const tot = k => camps.reduce((a, c) => ({ spend: a.spend + c.s[k].spend, sales: a.sales + c.s[k].sales, orders: a.orders + c.s[k].orders }), { spend: 0, sales: 0, orders: 0 });
+  const tot = k => camps.filter(c => !orderPay(c.name)).reduce((a, c) => ({ spend: a.spend + c.s[k].spend, sales: a.sales + c.s[k].sales, orders: a.orders + c.s[k].orders }), { spend: 0, sales: 0, orders: 0 });
   const drrOf = t => t.sales > 0 ? t.spend / t.sales : null;
   const P7 = windowProfit(M7), Pp = Mp ? windowProfit(Mp) : null;
   const recs = planRecs(M7, Mp, camps, G);
@@ -1820,7 +1824,7 @@ function renderToday() {
 
   // --- 4. Реклама по кампаниям ---
   const W = { w0: win('w0'), w1: win('w1') };
-  const ads = `<div class="panel"><div class="panel-head"><h2>Реклама по кампаниям</h2><p>Ozon Performance. ДРР = расход / продажи с рекламы. Правила плана: две недели выше ${G.campBad}% — снижать ставку или выключать; до ${G.campGood}% — кандидат на больший бюджет.</p></div>
+  const ads = `<div class="panel"><div class="panel-head"><h2>Реклама по кампаниям</h2><p>Ozon Performance. ДРР = расход / продажи с рекламы («оплата за заказ» в ДРР не входит: продаж по ней в статистике нет). Правила плана: две недели выше ${G.campBad}% — снижать ставку или выключать; до ${G.campGood}% — кандидат на больший бюджет.</p></div>
     ${!S.api.perf?.on ? stub('Добавьте ключи Ozon Performance — появятся расход, продажи и ДРР по каждой кампании.') : !camps.length ? stub(S.api.perf.error ? esc(S.api.perf.error) : 'Кампаний с расходом за 30 дней нет или данные ещё загружаются.') : table('planCamps', [
       { key: 'name', label: 'Кампания', val: c => c.name, cell: c => `<td><b>${esc(c.name)}</b>${c.status === 'active' ? '' : ' <span class="pill gray">пауза</span>'}</td>` },
       { key: 'spend', label: 'Расход, 7 дн.', num: 1, val: c => c.s.d7.spend, fmt: v => rub(v) },

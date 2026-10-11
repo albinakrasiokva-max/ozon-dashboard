@@ -203,6 +203,13 @@ test('Telegram: ежедневная сводка и недельный отчё
   const c = windowCalc(win, { data: { campaigns: [{ sku: 7, spend: 70 }] } }, { costs: { 7: 400 }, tax: 6 });
   assert.equal(c.rows[0].profit, 1000 - 250 - 100 - 70 - 60 - 400);
 
+  const { campVerdict, visibleCamp } = await import('../lib/ozonDigest.js');
+  const z = { spend: 0, sales: 0, orders: 0, views: 0, drr: null }, s = { d7: { spend: 2000, sales: 0, orders: 0, views: 900, drr: Infinity }, w0: z, w1: z };
+  assert.equal(campVerdict(s, 'active', { campBad: 12, campGood: 6 }, 'Оплата за заказ - все товары')[0], 'gray', 'оплата за заказ — не «расход без заказов»');
+  assert.equal(campVerdict(s, 'active', { campBad: 12, campGood: 6 }, 'Щетка 08.09')[0], 'neg');
+  assert.equal(visibleCamp({ name: 'Кампания 28420782', daily: [] }), false);
+  assert.equal(visibleCamp({ name: 'Целевой Голень 24,09', daily: [] }), true);
+
   // Время отправки: не раньше 9:00 МСК, один раз в день, только когда данные по вчерашний день
   db.state.digestDay = '';
   const d7 = db.raw.ozon.windows.find(x => x.key === 'd7');
