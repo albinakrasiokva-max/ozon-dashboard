@@ -29,7 +29,7 @@ if (process.env.SETTINGS_FILE && !process.env.SETTINGS_JSON && !fs.existsSync(pr
   console.log(`Создан ${process.env.SETTINGS_FILE} из шаблона — впишите туда цифры бизнеса.`);
 }
 
-const LISTS = ['tasks', 'docs', 'deals']; // массивы элементов с id; решения меняются только через /api/decisions
+const LISTS = ['tasks', 'docs', 'deals', 'plan']; // массивы элементов с id; решения меняются только через /api/decisions
 const MAPS = [];
 const MAX_BODY = 5 * 1024 * 1024;
 const MAX_UPLOAD = 25 * 1024 * 1024;
@@ -69,7 +69,15 @@ function ozonReports() {
     return { on: true, at: st.lastOkAt || null, error: st.error || raw?.reportsError || null, datasets: raw?.reports || [] };
   };
   const seller = part('ozon'), perf = part('ozonPerf');
+  // Окна вкладки «План»: начисления продавца + реклама Performance (если есть), иначе реклама из начислений
+  const perfWin = on.includes('ozonPerf') ? db.raw.ozonPerf?.windows || [] : [];
+  const windows = seller.on ? (db.raw.ozon?.windows || []).map(w => {
+    const pa = perfWin.find(x => x.key === w.key);
+    return { key: w.key, label: w.label, from: w.from, to: w.to, datasets: [w.accruals, pa ? pa.ads : w.ads].filter(Boolean) };
+  }) : [];
+  const campaigns = on.includes('ozonPerf') ? (db.raw.ozonPerf?.campaigns || []).map(c => ({ id: c.id, name: c.name, status: c.status, daily: c.daily })) : [];
   return {
+    windows, campaigns,
     seller: { on: seller.on, at: seller.at, error: seller.error },
     perf: { on: perf.on, at: perf.at, error: perf.error },
     // Реклама из начислений нужна, только если за этот месяц нет данных Ozon Performance

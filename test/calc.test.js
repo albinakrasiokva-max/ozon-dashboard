@@ -167,6 +167,24 @@ test('Аналитика Ozon: начисления, остатки и рекл�
   assert.equal(c.spend, 15000); assert.equal(c.impr, 60000); assert.equal(c.tool, 'Оплата за клик');
 });
 
+test('План: окна 7 дней и недель, реклама по окнам из Performance', async () => {
+  const { planWindows } = await import('../lib/ozonReports.js');
+  // воскресенье 11.10.2026 15:00 МСК: 7 дней — 04–10.10, прошлая неделя пн–вс — 28.09–04.10
+  const w = Object.fromEntries(planWindows(new Date('2026-10-11T12:00:00Z')).map(x => [x.key, x]));
+  assert.deepEqual([w.d7.from, w.d7.to, w.p7.from, w.p7.to], ['2026-10-04', '2026-10-10', '2026-09-27', '2026-10-03']);
+  assert.deepEqual([w.w0.from, w.w0.to, w.w1.from, w.w1.to], ['2026-09-28', '2026-10-04', '2026-09-21', '2026-09-27']);
+  // понедельник 12.10 00:30 МСК — неделя 05–11.10 уже закрыта
+  const m = Object.fromEntries(planWindows(new Date('2026-10-11T21:30:00Z')).map(x => [x.key, x]));
+  assert.deepEqual([m.w0.from, m.w0.to], ['2026-10-05', '2026-10-11']);
+
+  const { windows } = getDb().raw.ozon, perf = getDb().raw.ozonPerf;
+  assert.deepEqual(windows.map(x => x.key), ['d7', 'p7', 'w0', 'w1']);
+  assert.equal(windows[0].accruals.type, 'accruals');
+  const ads = perf.windows.find(x => x.key === 'd7').ads;
+  assert.equal(ads.data.campaigns[0].spend, 7 * 500, 'расход кампании за 7 дней');
+  assert.equal(ads.data.campaigns[0].sku, 555);
+});
+
 test('старый метод остатков отключён (404) — остатки берутся из /v4/product/info/stocks', async () => {
   installMock({ 'api-seller.ozon.ru/v2/analytics/stock_on_warehouses': 404 });
   await syncAll();
