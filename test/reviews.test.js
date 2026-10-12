@@ -28,6 +28,8 @@ const processed = [
   { id: 'p2', sku: 111, rating: 1, text: 'Порвался шов', published_at: hoursAgo(400) }
 ];
 const sent = [], edited = [], claude = [], posted = [];
+// Что «распознаёт» Claude на скриншоте
+let shotReviews = [];
 let n = 0;
 
 before(() => installMock({}, {
@@ -41,8 +43,11 @@ before(() => installMock({}, {
   'api.anthropic.com/v1/messages': (u, opt) => {
     const body = JSON.parse(opt.body);
     claude.push(body);
+    if (body.output_config?.format) return claudeMessage(JSON.stringify({ reviews: shotReviews }));
     return claudeMessage(`Вариант ${++n}`);
   },
+  'api.telegram.org/bottg-test/getFile': () => ({ ok: true, result: { file_path: 'photos/shot.jpg' } }),
+  'api.telegram.org/file/bottg-test/photos/shot.jpg': () => Buffer.from('fake-jpeg'),
   'api.telegram.org/bottg-test/sendMessage': (u, opt) => { const b = JSON.parse(opt.body); sent.push(b); return { ok: true, result: { message_id: 100 + sent.length } }; },
   'api.telegram.org/bottg-test/editMessageText': (u, opt) => { edited.push(JSON.parse(opt.body)); return { ok: true, result: {} }; },
   'api.telegram.org/bottg-test/editMessageReplyMarkup': (u, opt) => { edited.push(JSON.parse(opt.body)); return { ok: true, result: {} }; },
@@ -128,6 +133,55 @@ test('ответ на черновик с пожеланием — новый в
   assert.match(claude.at(-1).messages[0].content, /Отзыв: Хороший бандаж, но липучка слабая/);
   assert.match(sent.at(-1).text, /^<code>Вариант \d+<\/code>$/);
   assert.match(sent.at(-1).reply_markup.inline_keyboard[0][0].callback_data, /^rv:again:m/, 'присланный текстом отзыв на Ozon не отправить');
+});
+
+test('/primer: прошлые ответы текстом сохраняются и становятся образцом стиля', async () => {
+  sent.length = 0;
+  await handleUpdate({ update_id: 50, message: { message_id: 50, chat: { id: 42 }, text: '/primer' } });
+  assert.match(sent.at(-1).text, /Присылайте свои прошлые ответы/);
+  await handleUpdate({ update_id: 51, message: { message_id: 51, chat: { id: 42 }, text: 'Отзыв: Ткань тонкая\nОтвет: Ой, как жаль! Напишите нам в чат — подберём замену. Ваша «Мамина забота»' } });
+  await handleUpdate({ update_id: 52, message: { message_id: 52, chat: { id: 42 }, text: 'Спасибо за тёплые слова, носите с удовольствием! «Мамина забота» 💛' } });
+  assert.match(sent.at(-1).text, /Всего 2 образца/);
+  const calls = claude.length;
+  await handleUpdate({ update_id: 53, message: { message_id: 53, chat: { id: 42 }, text: '/gotovo' } });
+  assert.equal(claude.length, calls, 'образцы сохраняются без ИИ');
+  assert.match(sent.at(-1).text, /сохранено 2 образца/);
+
+  await handleUpdate({ update_id: 54, message: { message_id: 54, chat: { id: 42 }, text: 'Пояс широкий, держит хорошо' } });
+  const sys = claude.at(-1).system;
+  assert.match(sys, /Отзыв: Ткань тонкая\nОтвет продавца: Ой, как жаль!/);
+  assert.match(sys, /Ответ продавца: Спасибо за тёплые слова/);
+  await handleUpdate({ update_id: 55, message: { message_id: 55, chat: { id: 42 }, text: '/primery' } });
+  assert.match(sent.at(-1).text, /Сохранено 2 образца/);
+});
+
+test('скриншот отзыва: бот распознаёт отзыв и пишет черновик, пожелание из подписи учитывается', async () => {
+  shotReviews = [{ product: 'Бандаж послеродовой', rating: 3, text: 'Липучка слабая', pros: '', cons: 'Липучка', sellerAnswer: '' }];
+  sent.length = 0;
+  await handleUpdate({ update_id: 60, message: { message_id: 60, chat: { id: 42 }, photo: [{ file_id: 'S', file_size: 9 }], caption: 'предложи замену' } });
+  const shot = claude.at(-2);
+  assert.equal(shot.messages[0].content[0].type, 'image');
+  assert.equal(shot.messages[0].content[0].source.media_type, 'image/jpeg');
+  assert.match(sent.find(x => /Отзыв со скриншота/.test(x.text)).text, /★★★☆☆[\s\S]*Бандаж послеродовой[\s\S]*Липучка слабая/);
+  const prompt = claude.at(-1).messages[0].content;
+  assert.match(prompt, /Товар: Бандаж послеродовой/);
+  assert.match(prompt, /Пожелание к ответу: предложи замену/);
+  assert.match(sent.at(-1).text, /^<code>Вариант \d+<\/code>$/);
+  assert.equal(sent.at(-1).reply_markup.inline_keyboard[0][0].callback_data.startsWith('rv:again:m'), true, 'без кнопки «Отправить на Ozon»');
+
+  shotReviews = [];
+  await handleUpdate({ update_id: 61, message: { message_id: 61, chat: { id: 42 }, photo: [{ file_id: 'S', file_size: 9 }] } });
+  assert.match(sent.at(-1).text, /не нашёл отзыва/);
+});
+
+test('скриншот в режиме /primer сохраняет ваш ответ под отзывом', async () => {
+  shotReviews = [{ product: '', rating: 5, text: 'Всё супер', pros: '', cons: '', sellerAnswer: 'Спасибо! Рады, что подошло 💛 «Мамина забота»' }];
+  await handleUpdate({ update_id: 70, message: { message_id: 70, chat: { id: 42 }, text: '/primer' } });
+  await handleUpdate({ update_id: 71, message: { message_id: 71, chat: { id: 42 }, photo: [{ file_id: 'S', file_size: 9 }] } });
+  assert.match(sent.at(-1).text, /Сохранил 1 ответ со скриншота. Всего 3 образца/);
+  await handleUpdate({ update_id: 72, message: { message_id: 72, chat: { id: 42 }, text: '/gotovo' } });
+  await handleUpdate({ update_id: 73, message: { message_id: 73, chat: { id: 42 }, text: '/primery_udalit' } });
+  assert.equal(getDb().state.reviews.primers.length, 0);
 });
 
 test('без роли «Review» отправка не проходит, бот говорит, что включить', async () => {
