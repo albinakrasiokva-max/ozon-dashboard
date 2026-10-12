@@ -16,7 +16,7 @@ Object.assign(process.env, {
 });
 
 const { getDb } = await import('../lib/db.js');
-const { handleUpdate, maybeCheckReviews } = await import('../reviews-bot.js');
+const { handleUpdate, maybeCheckReviews } = await import('../lib/reviewsBot.js');
 
 const hoursAgo = h => new Date(Date.now() - h * 3600e3).toISOString();
 const reviews = [
