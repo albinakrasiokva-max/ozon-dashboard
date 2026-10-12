@@ -1,5 +1,6 @@
 // Отдельный Telegram-бот для ответов на отзывы Ozon. С дашбордом не связан: свой токен, своя база.
-// Новые отзывы приходят в чат с черновиком ответа от Claude. Вы копируете ответ и публикуете его в кабинете Ozon.
+// Новые отзывы приходят в чат с черновиком ответа от Claude в стиле ваших прошлых ответов.
+// На Ozon ответ уходит только по кнопке «Отправить» — после вашей проверки.
 // Запуск: npm run bot. Ключи — в .env (раздел «Бот для отзывов»).
 import http from 'node:http';
 import path from 'node:path';
@@ -20,22 +21,44 @@ const sendHtml = async (chat_id, text, extra = {}) => (await call('sendMessage',
 const reply = (chat_id, text, reply_to) => call('sendMessage', { chat_id, text, ...(reply_to ? { reply_parameters: { message_id: reply_to, allow_sending_without_reply: true } } : {}) }).catch(e => console.error('[bot]', e.message));
 const replyTo = id => ({ reply_parameters: { message_id: id, allow_sending_without_reply: true } });
 
-const HELP = 'Я присылаю новые отзывы Ozon с черновиком ответа. Нажмите на черновик — он скопируется, — и вставьте его в кабинете Ozon.\n\n' +
+const HELP = 'Я присылаю новые отзывы Ozon с черновиком ответа в стиле ваших прошлых ответов. ' +
+  'На Ozon ответ уходит, только когда вы нажмёте «✅ Отправить на Ozon».\n\n' +
+  '• «🔄 Другой вариант» — перепишу ответ.\n' +
+  '• «✏️ Свой текст» — пришлите исправленный ответ, я покажу его с кнопкой «Отправить».\n' +
   '• Ответьте (reply) на черновик пожеланием — «короче», «предложи размер побольше» — и я перепишу.\n' +
   '• Пришлите текст любого отзыва — напишу ответ на него.\n' +
   '/otzyvy — проверить новые отзывы сейчас';
 
-// Кнопки под черновиком: «Другой вариант» и «Ответила»
+// Чат ждёт исправленный текст ответа после кнопки «Свой текст»: chat → id отзыва
+const waitingText = new Map();
+
+// Черновик новым сообщением с кнопками
+async function sendDraft(chat, id, draft, replyToId) {
+  const mid = await sendHtml(chat, reviews.draftHtml(draft), { reply_markup: reviews.draftButtons(id), ...(replyToId ? replyTo(replyToId) : {}) });
+  reviews.rememberMessage(id, chat, mid);
+}
+
+// Кнопки под черновиком: «Отправить на Ozon», «Другой вариант», «Свой текст»
 async function handleCallback(q) {
   const chat = String(q.message?.chat?.id ?? '');
   const answer = text => call('answerCallbackQuery', { callback_query_id: q.id, ...(text ? { text } : {}) }).catch(e => console.error('[bot]', e.message));
   const [kind, action, id] = String(q.data || '').split(':');
   if (kind !== 'rv' || !allowed().includes(chat) || !q.message) return answer();
   const msg = { chat_id: chat, message_id: q.message.message_id };
-  if (action === 'done') {
-    reviews.markDone(id);
-    await answer('Отмечено ✅');
-    return call('editMessageReplyMarkup', { ...msg, reply_markup: { inline_keyboard: [] } }).catch(() => {});
+  if (action === 'send') {
+    await answer('Отправляю на Ozon…');
+    try {
+      const r = await reviews.sendReply(id, q.message.text); // ровно тот текст, что вы видите над кнопкой
+      await call('editMessageText', { ...msg, text: reviews.sentHtml(r.text), parse_mode: 'HTML' }).catch(() => {});
+      if (r.already) reply(chat, 'Этот ответ уже отправлен на Ozon.', q.message.message_id);
+    } catch (e) { reply(chat, 'Не отправлено: ' + e.message, q.message.message_id); }
+    return;
+  }
+  if (action === 'edit') {
+    if (!reviews.reviewItem(id)) return answer('Отзыв уже не найден');
+    waitingText.set(chat, id);
+    await answer();
+    return reply(chat, 'Пришлите исправленный текст ответа одним сообщением — я покажу его с кнопкой «Отправить». Передумали — /otmena.', q.message.message_id);
   }
   if (action === 'again') {
     await answer('Пишу другой вариант…');
@@ -61,6 +84,15 @@ export async function handleUpdate(u) {
       .then(n => { if (!n) reply(chat, 'Новых отзывов нет.', m.message_id); })
       .catch(e => reply(chat, 'Не получилось получить отзывы: ' + (getDb().status.reviews?.error || e.message), m.message_id));
   }
+  if (/^\/(otmena|cancel)/i.test(text)) { waitingText.delete(chat); return reply(chat, 'Хорошо, ничего не меняю.', m.message_id); }
+  // После «Свой текст»: сообщение — это готовый ответ, без ИИ
+  if (text && !text.startsWith('/') && waitingText.has(chat)) {
+    const id = waitingText.get(chat);
+    waitingText.delete(chat);
+    try { await sendDraft(chat, id, reviews.setDraft(id, text), m.message_id); }
+    catch (e) { reply(chat, 'Не получилось: ' + e.message, m.message_id); }
+    return;
+  }
   if (!text || text.startsWith('/')) return reply(chat, HELP, m.message_id);
   if (!aiEnabled()) return reply(chat, 'Для ответов нужен ключ ANTHROPIC_API_KEY.', m.message_id);
   // Ответ (reply) на черновик — пожелание к нему: переписываем
@@ -69,8 +101,7 @@ export async function handleUpdate(u) {
     const { id, draft } = target
       ? { id: target.id, draft: await reviews.redraft(target.id, text) }
       : await reviews.manualDraft(text); // иначе текст — это отзыв, на который нужен ответ
-    const mid = await sendHtml(chat, reviews.draftHtml(draft), { reply_markup: reviews.draftButtons(id), ...replyTo(m.message_id) });
-    reviews.rememberMessage(id, chat, mid);
+    await sendDraft(chat, id, draft, m.message_id);
   } catch (e) { reply(chat, 'Не получилось написать ответ: ' + e.message, m.message_id); }
 }
 
