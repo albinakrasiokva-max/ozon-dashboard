@@ -34,6 +34,17 @@ node -e "console.log(require('crypto').randomBytes(12).toString('base64url'))"
 Править файл на диске неудобно, поэтому проще задать переменную `SETTINGS_JSON`: туда вставляется всё содержимое settings.json
 одной строкой. Она важнее файла, а после её изменения Railway перезапустит сервис.
 
+### Бот для отзывов Ozon
+
+Отдельный сервис в том же проекте Railway, с дашбордом не связан.
+
+1. В проекте → **New** → **GitHub Repo** → этот же репозиторий.
+2. Сервис → **Settings** → **Deploy** → **Custom Start Command**: `node reviews-bot.js`.
+3. **Volumes** → свой диск с путём `/data` (не общий с дашбордом).
+4. **Variables**: `REVIEWS_BOT_TOKEN` (новый бот от @BotFather, не токен дашборда), `REVIEWS_ALLOWED_CHATS`,
+   `OZON_CLIENT_ID`, `OZON_API_KEY`, `ANTHROPIC_API_KEY`, `PORT=3000`, `RAILWAY_RUN_UID=0`; по желанию `REVIEWS_SIGNATURE` и другие `REVIEWS_*`.
+5. Домен генерировать не нужно. Replicas = 1.
+
 ## Вариант 2. Свой сервер (VPS) с Docker
 
 Нужен сервер с Docker и домен, который указывает на IP сервера (запись A).

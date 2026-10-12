@@ -7,7 +7,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test test/calc.test.js test/docs.test.js test/decisions.test.js test/auth.test.js",
+    "bot": "node reviews-bot.js",
+    "test": "node --test test/calc.test.js test/docs.test.js test/decisions.test.js test/auth.test.js test/reviews.test.js",
     "check": "node test/report.js"
   },
   "engines": {
