@@ -143,5 +143,5 @@ test('без роли «Review read only» — понятная ошибка', a
   installMock({ 'api-seller.ozon.ru/v1/review/list': 403 }, { 'api.telegram.org/bottg-test/sendMessage': (u, opt) => { sent.push(JSON.parse(opt.body)); return { ok: true, result: { message_id: 1 } }; } });
   sent.length = 0;
   await handleUpdate({ update_id: 7, message: { message_id: 9, chat: { id: 42 }, text: '/otzyvy' } });
-  assert.match(sent.at(-1).text, /Review read only/);
+  assert.match(sent.at(-1).text, /роль «Review».*Ответ сервиса: «Invalid token»|Ответ сервиса: «Invalid token».*роль «Review»/);
 });
