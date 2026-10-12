@@ -21,7 +21,7 @@ npm start                 # откройте http://localhost:3000
 | `server.js` | отдаёт `index.html` и API, запускает синхронизацию по расписанию |
 | `lib/connectors/*.js` | по одному коннектору на источник: WB, реклама WB, Ozon Seller, Ozon Performance, amoCRM, Битрикс24, Т-Банк, Точка; документы — почта (IMAP), Диадок, документы WB |
 | `lib/telegram.js` | Telegram-бот: принимает пересланные файлы и фото, отвечает, куда разложил |
-| `reviews-bot.js`, `lib/reviews.js` | отдельный бот: новые отзывы Ozon с черновиком ответа от Claude |
+| `reviews-bot.js`, `lib/reviewsBot.js`, `lib/reviews.js` | отдельный бот: новые отзывы Ozon с черновиком ответа от Claude |
 | `lib/docs.js` | приём документов: файл → распознавание ИИ → задачи «подписать» и «оплатить» |
 | `lib/ai.js` | Claude API (официальный SDK): распознавание документов в строгий JSON и ИИ-чат |
 | `lib/snapshot.js` | снимок живых данных для ИИ-чата и Центра решений (без демо-цифр) |
