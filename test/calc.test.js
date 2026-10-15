@@ -235,6 +235,39 @@ test('Telegram: ежедневная сводка и недельный отчё
   assert.equal(dueDigests(db, at('2026-10-12T07:00:00Z')).length, 0, 'данные не по вчерашний день — ждём синхронизацию');
 });
 
+test('План магазина из артефакта: разбор HTML и обновление чек-листа с сохранением отметок', async () => {
+  const { planFromHtml } = await import('../scripts/planFromArtifact.mjs');
+  const { applyPlan } = await import('../lib/planSync.js');
+  const html = `<div class="eyebrow">Ozon · FBO · план обновлён 15 октября 2026</div>
+    <section><div class="sec-head"><h2>Уже сделано</h2></div><ul class="donelist"><li>готово</li></ul></section>
+    <section><div class="sec-head"><h2>На этой неделе</h2><span class="when urgent">до 17 октября</span></div><ul>
+      <li><label><input type="checkbox" id="m11"><span><span class="t">Заявки на вывоз от 24 сентября</span><span class="why">Пять <em>заявок</em>.</span></span></label></li>
+      <li><label><input type="checkbox" id="b9"><span><span class="t">~2 ноября: сменить название</span><span class="why">Название: <span class="quote">Бандаж на запястье</span><ol><li>Записать «до».</li><li>Ждать 2 недели.</li></ol></span></span></label></li>
+      <li><label><input type="checkbox" id="b8"><span><span class="t">До 28 октября: аванс УСН</span><span class="why">x</span></span></label></li>
+      <li><label><input type="checkbox" id="b10"><span><span class="t">Конец октября: поставка</span><span class="why">y</span></span></label></li></ul></section>
+    <section><div class="sec-head"><h2>Каждый понедельник</h2><span class="when">15 минут</span></div><ul>
+      <li><label><input type="checkbox" id="w1"><span><span class="t">ДРР по кампаниям</span><span class="why">z</span></span></label></li></ul></section>`;
+  const p = planFromHtml(html);
+  assert.equal(p.updated, '15 октября 2026');
+  assert.deepEqual(p.tasks.map(t => [t.id, t.section === 'monday' ? 'monday' : 'other', t.due]),
+    [['m11', 'other', '2026-10-17'], ['b9', 'other', '2026-11-02'], ['b8', 'other', '2026-10-28'], ['b10', 'other', '2026-10-31'], ['w1', 'monday', '']],
+    '«от 24 сентября» — не срок; срок раздела «до 17 октября»; «конец октября» — 31-е');
+  assert.match(p.tasks[1].note, /«Бандаж на запястье».*• Записать «до»\..*• Ждать 2 недели\./, 'вложенный список и цитата не теряются');
+  assert.equal(p.tasks[0].sectionTitle, 'На этой неделе · до 17 октября');
+
+  const db = getDb(), saved = db.store.plan;
+  db.store.plan = [{ id: 'm11', title: 'Заявки на вывоз от 24 сентября', done: true }, { id: 'b9', title: 'Совсем другая старая задача', done: true }, { id: 'old', title: 'Старая', done: false }, { id: 'u1', title: 'Своя', done: false }];
+  db.state.planVersion = '';
+  assert.equal(applyPlan(db, p), true);
+  const by = Object.fromEntries(db.store.plan.map(t => [t.id, t]));
+  assert.equal(by.m11.done, true, 'та же задача — отметка сохранилась');
+  assert.equal(by.b9.done, false, 'id тот же, но задача другая — отметка снята');
+  assert.equal(by.old, undefined, 'задачи, которой нет в плане, больше нет');
+  assert.ok(by.u1, 'задача, добавленная в дашборде, осталась');
+  assert.equal(applyPlan(db, p), false, 'та же версия плана — без изменений');
+  db.store.plan = saved;
+});
+
 test('старый метод остатков отключён (404) — остатки берутся из /v4/product/info/stocks', async () => {
   installMock({ 'api-seller.ozon.ru/v2/analytics/stock_on_warehouses': 404 });
   await syncAll();
