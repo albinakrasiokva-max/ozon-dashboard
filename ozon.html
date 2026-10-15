@@ -1861,14 +1861,21 @@ function renderToday() {
       <input type="checkbox" data-task="${esc(t.id)}" ${done ? 'checked' : ''} aria-label="Выполнено">
       <span style="${done ? 'text-decoration:line-through;opacity:.6' : ''}"><b>${esc(t.title)}</b>${t.due ? ` <span class="pill ${late ? 'neg' : 'gray'}">${late ? 'просрочено, ' : 'до '}${isoToRu(t.due).slice(0, 5)}</span>` : ''}${t.note ? `<br><span class="small muted">${esc(t.note)}</span>` : ''}</span>
       <button class="btn small" data-task-del="${esc(t.id)}" aria-label="Удалить задачу">×</button></li>`; };
-  const checklist = `<div class="panel"><div class="panel-head"><h2>Чек-лист плана</h2><p>Отметки хранятся на сервере и видны в любом браузере. «Каждый понедельник» сбрасывается сам в начале недели.</p></div>
+  // Разделы — как в «Плане магазина» (sectionTitle из плана), иначе стандартные; порядок — как в плане
+  const secs = [];
+  for (const t of [...(T || [])].sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9))) {
+    const k = t.section || 'week';
+    if (!secs.some(s => s[0] === k)) secs.push([k, t.sectionTitle || PLAN_SECTIONS.find(s => s[0] === k)?.[1] || 'Другое']);
+  }
+  for (const s of PLAN_SECTIONS) if (!secs.some(x => x[0] === s[0]) && s[0] === 'week') secs.unshift(s);
+  const checklist = `<div class="panel"><div class="panel-head"><h2>Чек-лист плана</h2><p>Задачи — из «Плана магазина» в Claude, обновляются вместе с ним. Отметки хранятся на сервере и видны в любом браузере. «Каждый понедельник» сбрасывается сам в начале недели.</p></div>
     ${!API_URL ? stub('Чек-лист работает, когда дашборд открыт с сервера.') : S.plan2.error ? stub(esc(S.plan2.error)) : !T ? stub('Загружаю…') :
-      PLAN_SECTIONS.map(([k, name]) => { const list = T.filter(t => (t.section || 'week') === k).sort((a, b) => (a.done - b.done) || (a.due || '9').localeCompare(b.due || '9') || (a.order ?? 0) - (b.order ?? 0));
-        return list.length ? `<h3 style="margin-top:14px">${name} <span class="small muted">${list.filter(isDone).length} из ${list.length}</span></h3><ul style="list-style:none;margin:6px 0 0;padding:0">${list.map(taskRow).join('')}</ul>` : ''; }).join('')}
+      secs.map(([k, name]) => { const list = T.filter(t => (t.section || 'week') === k).sort((a, b) => (a.done - b.done) || (a.due || '9').localeCompare(b.due || '9') || (a.order ?? 0) - (b.order ?? 0));
+        return list.length ? `<h3 style="margin-top:14px">${esc(name)} <span class="small muted">${list.filter(isDone).length} из ${list.length}</span></h3><ul style="list-style:none;margin:6px 0 0;padding:0">${list.map(taskRow).join('')}</ul>` : ''; }).join('')}
     ${API_URL && T ? `<div class="form-row" style="margin-top:14px">
       <label style="flex:1;min-width:220px">Новая задача<input type="text" id="taskTitle" placeholder="Например: проверить ДРР «Целевой Голень»"></label>
       <label>Срок<input type="date" id="taskDue"></label>
-      <label>Раздел<select id="taskSec">${PLAN_SECTIONS.map(([k, n]) => `<option value="${k}">${n}</option>`).join('')}</select></label>
+      <label>Раздел<select id="taskSec">${secs.map(([k, n]) => `<option value="${esc(k)}">${esc(n.split(' · ')[0])}</option>`).join('')}</select></label>
       <button class="btn primary" id="taskAdd">Добавить</button></div>` : ''}</div>`;
 
   el.innerHTML = `<div class="stack">${summary}${goals}${units}${ads}${weekly}${checklist}</div>`;

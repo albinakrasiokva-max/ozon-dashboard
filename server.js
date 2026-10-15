@@ -13,6 +13,7 @@ import { ingest, recognize, filePath } from './lib/docs.js';
 import { aiEnabled, chat } from './lib/ai.js';
 import { snapshotForAI } from './lib/snapshot.js';
 import { startTelegram, maybeSendDigests } from './lib/telegram.js';
+import { applyPlan } from './lib/planSync.js';
 import { runDecisions, maybeDailyRun, refreshStatuses, act, isRunning } from './lib/decisions.js';
 import { authEnabled, publicAccess, checkStartup, isAuthed, checkPassword, tooManyFails, clientIp, makeSession, sessionCookie, clearCookie, sameOrigin, loginPage } from './lib/auth.js';
 import { stopTelegram } from './lib/telegram.js';
@@ -331,6 +332,7 @@ server.listen(PORT, HOST, () => {
     syncAll().catch(() => {}).finally(daily);
   } else daily();
   setInterval(daily, 60000).unref();
+  applyPlan();   // задачи «Плана магазина» из OZON_PLAN, если план обновился
   setInterval(() => maybeSendDigests().catch(e => console.error('[telegram]', e.message)), 60000).unref();
   startTelegram();
 });
