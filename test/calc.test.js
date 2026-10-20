@@ -266,6 +266,11 @@ test('План магазина из артефакта: разбор HTML и о
   assert.ok(by.u1, 'задача, добавленная в дашборде, осталась');
   assert.equal(applyPlan(db, p), false, 'та же версия плана — без изменений');
   db.store.plan = saved;
+
+  const { planEnv, readPlan } = await import('../lib/planSync.js');
+  const json = JSON.stringify(p), cut = [json.slice(0, 100), json.slice(100, 250), json.slice(250)];
+  const env = { OZON_PLAN: cut[0], OZON_PLAN_2: cut[1], OZON_PLAN_3: cut[2], OZON_PLAN_5: 'мусор' };
+  assert.equal(readPlan(planEnv(env)).version, p.version, 'план из частей OZON_PLAN, _2, _3 склеивается; _5 без _4 не берётся');
 });
 
 test('старый метод остатков отключён (404) — остатки берутся из /v4/product/info/stocks', async () => {
