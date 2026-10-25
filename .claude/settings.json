@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Railway__set-variables",
+      "mcp__Railway__connect-service-source",
+      "mcp__Railway__redeploy",
+      "mcp__Railway__list-deployments",
+      "mcp__Railway__get-logs"
+    ]
+  }
+}
